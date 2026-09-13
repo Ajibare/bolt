@@ -3,6 +3,9 @@ import type { Money } from "@trading-bolt/shared";
 /** Side of a proposed order, matching the shared TradeSide convention. */
 export type RiskSide = "buy" | "sell";
 
+/** Direction of an open position held by the account. */
+export type PositionSide = "long" | "short";
+
 /**
  * A proposed order to be risk-checked. Fields are decimal strings; the risk
  * engine never executes anything — it returns a deterministic verdict.
@@ -17,6 +20,13 @@ export interface OrderProposal {
   stopLoss?: Money;
   /** Absolute take-profit price, required when `requireTakeProfit` is set. */
   takeProfit?: Money;
+  /**
+   * True for a risk-reducing exit (close/reduce). Reduce-only orders are never
+   * blocked by opening or capital-protection rules: they can only shrink
+   * exposure, and a blocked exit could prevent the account from de-risking.
+   * ValidateReduceOnly still requires a matching `heldPosition`.
+   */
+  reduceOnly?: boolean;
 }
 
 /**
@@ -34,6 +44,14 @@ export interface RiskAccountState {
   currentExposure: Money;
   /** Current fractional drawdown from peak equity (0..1). */
   currentDrawdown: Money;
+  /**
+   * The account's current position in the proposal's symbol. Required for
+   * validateReduceOnly; omitted when the symbol is flat.
+   */
+  heldPosition?: {
+    quantity: Money;
+    side: PositionSide;
+  };
 }
 
 /**
@@ -106,6 +124,7 @@ export const RISK_RULE_IDS = [
   "max-daily-loss",
   "max-drawdown",
   "circuit-breaker",
+  "reduce-only",
 ] as const;
 
 export type RiskRuleId = (typeof RISK_RULE_IDS)[number];

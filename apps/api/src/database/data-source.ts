@@ -5,6 +5,8 @@ import { CreateUsers1700000000001 } from './migrations/1700000000001-CreateUsers
 import { CreateSessions1700000000002 } from './migrations/1700000000002-CreateSessions.js';
 import { CreateMarketCandles1700000000003 } from './migrations/1700000000003-CreateMarketCandles.js';
 import { CreateBacktests1700000000004 } from './migrations/1700000000004-CreateBacktests.js';
+import { CreatePaperTrading1700000000005 } from './migrations/1700000000005-CreatePaperTrading.js';
+import { CreateBots1700000000006 } from './migrations/1700000000006-CreateBots.js';
 
 /**
  * DataSource used by CLI-style migration and seed scripts run with tsx.
@@ -24,6 +26,8 @@ export function buildDataSource(
       CreateSessions1700000000002,
       CreateMarketCandles1700000000003,
       CreateBacktests1700000000004,
+      CreatePaperTrading1700000000005,
+      CreateBots1700000000006,
     ],
     synchronize: false,
     migrationsRun: false,

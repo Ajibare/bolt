@@ -25,9 +25,15 @@
 > - **Phase 4 Backtesting** — implemented & unit-verified (steps A–D: engine,
 >   sizing/shorts/metrics, persistence, API + `/backtests` UI).
 > - **Phase 5 Risk Engine** — implemented & unit-verified (`@trading-bolt/risk-engine`:
->   decimal-exact position sizing, 14-rule deterministic decision matrix,
->   circuit breaker severities, session/symbol/side restrictions; runtime wiring
->   into live account/order state deferred to Phase 6+).
+>   decimal-exact position sizing, 14-rule deterministic decision matrix + `reduce-only`
+>   exit validation, circuit breaker severities, session/symbol/side restrictions;
+>   runtime wiring into live account/order state deferred to Phase 6+).
+> - **Phase 6 Paper Trading** — implemented & unit-verified (steps A–D:
+>   `@trading-bolt/broker-adapters` — async `BrokerAdapter` abstraction + deterministic
+>   `PaperBroker` with full §15 lifecycle; risk-gated paper ledger API — accounts,
+>   orders (market/limit, idempotency), positions, portfolio snapshots; `/paper/*`
+>   endpoints under JWT. Phase 7 bot engine adds the continuous strategy loop and
+>   resting-limit-fill ticks).
 
 ---
 

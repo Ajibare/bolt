@@ -38,6 +38,12 @@ importers:
       '@nestjs/typeorm':
         specifier: ^12.0.1
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@0.3.31(ioredis@6.0.0(supports-color@7.2.0))(pg@8.23.0)(supports-color@7.2.0))
+      '@trading-bolt/broker-adapters':
+        specifier: workspace:*
+        version: link:../../packages/broker-adapters
+      '@trading-bolt/risk-engine':
+        specifier: workspace:*
+        version: link:../../packages/risk-engine
       '@trading-bolt/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -211,10 +217,35 @@ importers:
         version: 5.9.3
 
   packages/broker-adapters:
+    dependencies:
+      '@trading-bolt/shared':
+        specifier: workspace:*
+        version: link:../shared
+      decimal.js:
+        specifier: ^10.6.0
+        version: 10.6.0
     devDependencies:
+      '@eslint/js':
+        specifier: ^9.33.0
+        version: 9.39.5
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.4
+      eslint:
+        specifier: ^9.33.0
+        version: 9.39.5(jiti@2.7.0)(supports-color@7.2.0)
+      globals:
+        specifier: ^16.3.0
+        version: 16.5.0
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
+      typescript-eslint:
+        specifier: ^8.44.0
+        version: 8.70.0(eslint@9.39.5(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
+      vitest:
+        specifier: ^5.0.0
+        version: 5.0.0(@types/node@24.13.4)(vite@8.3.0(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13))
 
   packages/indicators:
     dependencies:

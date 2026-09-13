@@ -214,6 +214,40 @@ export function checkCircuitBreaker(ctx: RuleContext): RuleCheck {
   return fail("circuit-breaker", `Circuit breaker(s) OPEN: ${ctx.openBreakers.join(", ")}`);
 }
 
+/**
+ * ValidateReduceOnly: a reduce-only order must reduce an existing position in
+ * the proposal's symbol. It may not open a position, may not exceed the held
+ * quantity, and must be on the side that reduces (sell reduces a long, buy
+ * reduces a short). Never applies to regular orders.
+ */
+export function checkValidateReduceOnly(ctx: RuleContext): RuleCheck {
+  const { account, proposal } = ctx;
+  if (proposal.reduceOnly !== true) {
+    return pass("reduce-only");
+  }
+  const held = account.heldPosition;
+  if (!held) {
+    return fail("reduce-only", "Reduce-only requires an existing position but the symbol is flat");
+  }
+  const sideMatches =
+    (held.side === "long" && proposal.side === "sell") ||
+    (held.side === "short" && proposal.side === "buy");
+  if (!sideMatches) {
+    return fail(
+      "reduce-only",
+      `Reduce-only ${proposal.side} does not reduce the held ${held.side} position`,
+    );
+  }
+  const heldQty = new Decimal(held.quantity);
+  if (new Decimal(proposal.quantity).gt(heldQty)) {
+    return fail(
+      "reduce-only",
+      `Reduce-only quantity (${proposal.quantity}) exceeds held quantity (${held.quantity})`,
+    );
+  }
+  return pass("reduce-only");
+}
+
 function isWithin(session: TradingSession, minutes: number): boolean {
   const { startMinutes, endMinutes } = session;
   if (startMinutes === endMinutes) {
@@ -227,6 +261,13 @@ function isWithin(session: TradingSession, minutes: number): boolean {
 }
 
 export function runRules(ctx: RuleContext): RuleCheck[] {
+  // Reduce-only orders can only shrink exposure; opening/capital-protection
+  // rules (position size, exposure, risk, session, daily-loss, drawdown,
+  // breakers) must never block a closing order — a blocked exit could prevent
+  // de-risking. Only validation of the exit itself applies.
+  if (ctx.proposal.reduceOnly === true) {
+    return [checkValidateReduceOnly(ctx)];
+  }
   return [
     checkSymbol(ctx),
     checkSide(ctx),

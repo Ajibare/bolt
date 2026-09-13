@@ -236,4 +236,75 @@ describe("evaluateOrder", () => {
     const b = evaluateOrder(input);
     expect(a).toEqual(b);
   });
+
+  describe("reduce-only orders", () => {
+    const heldLong = (quantity = "2"): RiskAccountState => ({
+      ...BASE_ACCOUNT,
+      heldPosition: { quantity, side: "long" },
+    });
+
+    it("approves a reduce-only sell within the held position", () => {
+      const decision = evaluateOrder({
+        proposal: buyProposal({ side: "sell", quantity: "1", reduceOnly: true }),
+        account: heldLong(),
+        config: BASE_CONFIG,
+      });
+      expect(decision.approved).toBe(true);
+      expect(decision.results.every((r) => r.rule === "reduce-only")).toBe(true);
+    });
+
+    it("approves a reduce-only buy that closes a short", () => {
+      const decision = evaluateOrder({
+        proposal: buyProposal({ side: "buy", quantity: "1", reduceOnly: true }),
+        account: { ...BASE_ACCOUNT, heldPosition: { quantity: "1", side: "short" } },
+        config: BASE_CONFIG,
+      });
+      expect(decision.approved).toBe(true);
+    });
+
+    it("rejects a reduce-only order when the symbol is flat", () => {
+      const decision = evaluateOrder({
+        proposal: buyProposal({ side: "sell", quantity: "1", reduceOnly: true }),
+        account: BASE_ACCOUNT,
+        config: BASE_CONFIG,
+      });
+      expect(decision.approved).toBe(false);
+      expect(decision.reasons.some((r) => r.startsWith("Reduce-only"))).toBe(true);
+    });
+
+    it("rejects a reduce-only order that would exceed the held quantity", () => {
+      const decision = evaluateOrder({
+        proposal: buyProposal({ side: "sell", quantity: "3", reduceOnly: true }),
+        account: heldLong("2"),
+        config: BASE_CONFIG,
+      });
+      expect(decision.approved).toBe(false);
+      expect(decision.reasons.some((r) => r.includes("exceeds held quantity"))).toBe(true);
+    });
+
+    it("rejects a reduce-only order on the non-reducing side", () => {
+      const decision = evaluateOrder({
+        proposal: buyProposal({ side: "buy", quantity: "1", reduceOnly: true }),
+        account: heldLong("2"),
+        config: BASE_CONFIG,
+      });
+      expect(decision.approved).toBe(false);
+    });
+
+    it("is never blocked by opening, capital or breaker rules", () => {
+      const decision = evaluateOrder({
+        proposal: buyProposal({ side: "sell", quantity: "1", reduceOnly: true }),
+        account: heldLong("2"),
+        config: {
+          ...BASE_CONFIG,
+          maxOpenPositions: 0,
+          maxPositionSize: "0.0000001",
+          maxDailyLoss: "0.05",
+          maxDrawdown: "0.2",
+        },
+        openBreakers: ["account"],
+      });
+      expect(decision.approved).toBe(true);
+    });
+  });
 });

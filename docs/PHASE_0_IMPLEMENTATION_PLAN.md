@@ -1370,6 +1370,75 @@ consumed. Begin Phase 6 — Paper Trading (`PAPER_BROKER` + paper order/position
 portfolio services), which will wire `evaluateOrder` + `CircuitBreakerRegistry`
 as the mandatory gate between signals and order submission.
 
+## Phase 6 — Paper Trading (implemented)
+
+### Verified (step A — broker abstraction, this session)
+
+- `packages/broker-adapters` (`@trading-bolt/broker-adapters`): async
+  `BrokerAdapter` interface (placeOrder / cancelOrder / getOrder / getOpenOrders
+  / getPositions / getAccountState) plus `BrokerOrderRequest`, `BrokerOrder`,
+  `BrokerPosition`, `BrokerAccountState` and the full §15 status set
+  (CREATED→SUBMITTED→ACCEPTED→PARTIALLY_FILLED→FILLED/CANCELLED/REJECTED/FAILED).
+- `src/paper/paper-execution.ts` — pure, deterministic `evaluatePaperOrder`:
+  market fills at oracle ± slippage, limit fills/rests on trade-through; buying
+  power check on buys, held-quantity check on sells; fees via feeRate.
+- `src/paper/order-lifecycle.ts` — explicit transition matrix
+  (`ALLOWED`/`canTransition`/`transition`/`isTerminal`); no arbitrary states.
+- `src/paper/paper-broker.ts` — in-memory `PaperBroker implements BrokerAdapter`
+  (`kind = "paper"`), idempotent per `clientOrderId`, weighted-average entry,
+  rehydratable via `initialFreeCash`/`initialPositions` so Postgres stays the
+  source of truth (AGENTS.md §13).
+- `src/paper/paper-math.ts` — `realizedPnlOnClose`, `averageUpEntry`.
+- Order types scoped to `market | limit` (MVP only, per roadmap).
+
+### Verified (step B — risk-engine reduce-only, this session)
+
+- `OrderProposal.reduceOnly?: boolean` and `RiskAccountState.heldPosition?`.
+- New `reduce-only` rule + `checkValidateReduceOnly`: an exit must reduce an
+  existing position (side matches, quantity ≤ held), never re-opens, and skips
+  ALL opening/exposure/capital/breaker rules — a closed exit can never be
+  blocked. `@trading-bolt/risk-engine` tests: 45 → 51.
+
+### Verified (step B — paper ledger persistence, this session)
+
+- Migration `1700000000005-CreatePaperTrading.ts`: `paper_accounts`,
+  `paper_orders`, `paper_positions`, `paper_portfolio_snapshots`
+  (all `numeric(40,20)`, FK to users/accounts, unique/client+account idempotency
+  and status indexes).
+- Entities + repository ports (`paper-trading.repository.ts`) + TypeORM
+  implementations; `paper-broker.hydrator.ts` rehydrates an ephemeral broker
+  from the ledger.
+- `PaperTradingService`: flow is DTO → `evaluateOrder` (server-enforced
+  `DEFAULT_RISK_CONFIG`, never client values — AGENTS.md §18) → PaperBroker →
+  persisted order/account/position/portfolio snapshot. Idempotency returns the
+  original order for a repeated `clientOrderId` (§16).
+- `PaperTradingModule` wired into `AppModule`; controller protected by
+  `JwtAuthGuard`; user ownership enforced server-side on every route (§23).
+
+### Verified (step C — API + specs, this session)
+
+- `POST/GET /paper/accounts`, `POST /paper/accounts/:id/orders`,
+  `GET /paper/accounts/:id/orders`, `GET /paper/accounts/:id/positions`,
+  `GET /paper/accounts/:id/portfolio`.
+- Specs: paper DTO validation, service ledger flow (risk-gated filled buy,
+  reduce-only close P&L, oversized rejection, idempotency, ownership 404,
+  portfolio/positions queries), controller delegation.
+
+### Verified (step D — gates, this session)
+
+- Gates (all workspaces): `format:check` pass, `lint` pass, `typecheck` pass,
+  `test` pass — shared 17, indicators 30, trading-engine 47, risk-engine 51,
+  api 142, broker-adapters 35 (paper broker 12 + rehydration 2, execution 13,
+  math/lifecycle 8); `build` pass.
+- E2E (`apps/api/test/app.e2e-spec.ts`) still requires live PostgreSQL/Redis
+  (Docker Compose) — deferred as before.
+
+### Deferred to Phase 7 (Bot Engine)
+
+- Continuous strategy loop on a paper account (start bot → evaluate candles →
+  submit/close orders → persist), plus a tick loop that fills resting limit
+  orders from live candles; bot lifecycle states and monitoring.
+
 ---
 
 **END OF PHASE 0 IMPLEMENTATION PLAN**

@@ -237,6 +237,9 @@ limit?, config }`: candles are loaded through the existing `MarketsService`
   14-rule deterministic matrix: symbol, side, session, stop-loss required,
   take-profit required, stop distance, take-profit distance, risk per trade,
   position size, exposure, open positions, daily loss, drawdown, breaker.
+  Reduce-only exits (`proposal.reduceOnly`) are validated by the `reduce-only`
+  rule only — a closing order can never be blocked by opening/capital/breaker
+  rules (AGENTS.md §19 halts new risk, not de-risking).
 - `CircuitBreakerRegistry` — severities strategy/bot/account/global; OPEN only
   via explicit `trip(reason)`, closed only via explicit `reset()` (no automatic
   resumption, AGENTS.md §19). `evaluateBreaches` is the pure daily-loss /
@@ -244,6 +247,32 @@ limit?, config }`: candles are loaded through the existing `MarketsService`
 - Wiring the evaluator + breakers into live account state and order submission
   is deferred to Phase 6+ — there is no server-side account ledger yet, and
   client-supplied account values would violate AGENTS.md §18.
+
+## Paper Trading (Phase 6)
+
+- `@trading-bolt/broker-adapters` — async `BrokerAdapter` abstraction (the
+  future live Bybit adapter implements the same interface, AGENTS.md §11-12)
+  plus the deterministic in-memory `PaperBroker`:
+  - `evaluatePaperOrder` — pure fill engine: market fills at oracle ± slippage,
+    limit fills/rests on trade-through; buying-power / held-quantity guards.
+  - `order-lifecycle.ts` — explicit §15 transition matrix; no arbitrary states.
+  - `PaperBroker` is idempotent per `clientOrderId` (AGENTS.md §16) and
+    rehydratable from `initialFreeCash`/`initialPositions`, so Postgres remains
+    the source of truth (§13).
+  - Order types scoped to `market | limit` (MVP only).
+- `apps/api` paper ledger — migration `1700000000005-CreatePaperTrading.ts`
+  (`paper_accounts`, `paper_orders`, `paper_positions`,
+  `paper_portfolio_snapshots`), repository ports + TypeORM impls, and
+  `PaperTradingService`:
+  - Every order intent passes `evaluateOrder` with server-enforced
+    `DEFAULT_RISK_CONFIG` before the broker acts (§18) — never client values.
+  - Idempotency: a repeated `clientOrderId` returns the original order.
+  - Routes (JWT-protected, ownership checked server-side): `POST/GET
+/paper/accounts`, `POST /paper/accounts/:id/orders`, `GET
+/paper/accounts/:id/orders`, `GET /paper/accounts/:id/positions`, `GET
+/paper/accounts/:id/portfolio`.
+- Deferred to Phase 7: the continuous strategy loop on a paper account and the
+  tick that fills resting limit orders from live candles.
 
 ## Scripts
 
@@ -270,7 +299,7 @@ pnpm test
 pnpm build
 ```
 
-Current unit-test counts (2026-09-13): shared 17, indicators 30, trading-engine 47, risk-engine 45, api 114.
+Current unit-test counts (2026-09-13): shared 17, indicators 30, trading-engine 47, risk-engine 51, api 142, broker-adapters 35.
 
 E2E tests (`pnpm test:e2e`) and `db:migrate`/`db:seed` require a reachable
 PostgreSQL + Redis (Docker Compose or CI).
@@ -284,5 +313,5 @@ apps/
   worker/    BullMQ worker
 packages/
   shared/    shared types, enums, financial utils
-  (trading packages: indicators, trading-engine, risk-engine)
+  (trading packages: indicators, trading-engine, risk-engine, broker-adapters)
 ```

@@ -8,6 +8,8 @@ import { AuthModule } from './modules/auth/auth.module.js';
 import { MarketsModule } from './modules/markets/markets.module.js';
 import { StrategiesModule } from './modules/strategies/strategies.module.js';
 import { BacktestsModule } from './modules/backtests/backtests.module.js';
+import { PaperTradingModule } from './modules/paper-trading/paper-trading.module.js';
+import { BotsModule } from './modules/bots/bots.module.js';
 import { RedisModule } from './redis/redis.module.js';
 
 @Module({
@@ -47,6 +49,8 @@ import { RedisModule } from './redis/redis.module.js';
     MarketsModule,
     StrategiesModule,
     BacktestsModule,
+    PaperTradingModule,
+    BotsModule,
   ],
 })
 export class AppModule {}
