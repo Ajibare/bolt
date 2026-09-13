@@ -1,0 +1,12 @@
+node_modules
+.pnpm-store
+dist
+.next
+coverage
+.git
+.env
+**/.env
+*.log
+docs
+.idea
+.vscode

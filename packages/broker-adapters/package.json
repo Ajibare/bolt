@@ -1,0 +1,30 @@
+{
+  "name": "@trading-bolt/broker-adapters",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Trading Bolt — generic broker adapter interface and provider implementations (bybit in Phase 8)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./bybit": {
+      "types": "./dist/bybit/index.d.ts",
+      "import": "./dist/bybit/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
