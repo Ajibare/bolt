@@ -10,9 +10,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@trading-bolt/shared": "workspace:*",
     "@tanstack/react-query": "^5.102.8",
+    "@trading-bolt/shared": "workspace:*",
     "clsx": "^2.1.1",
+    "lightweight-charts": "^5.2.1",
     "next": "16.3.5",
     "react": "19.2.8",
     "react-dom": "19.2.8",

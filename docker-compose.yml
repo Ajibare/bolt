@@ -38,6 +38,9 @@ services:
       DATABASE_URL: postgres://bolt:bolt_dev_password@postgres:5432/trading_bolt
       REDIS_URL: redis://redis:6379
       WEB_ORIGIN: http://localhost:3000
+      JWT_SECRET: dev-only-change-me-32-characters-minimum
+      JWT_EXPIRES_IN: 15m
+      REFRESH_TOKEN_EXPIRES_IN: 7d
     ports:
       - "4000:4000"
     depends_on:

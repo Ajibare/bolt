@@ -39,6 +39,7 @@ jobs:
     env:
       DATABASE_URL: postgres://bolt:bolt@localhost:5432/trading_bolt_test
       REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-only-jwt-secret-that-is-at-least-32-chars
       NODE_ENV: test
 
     steps:

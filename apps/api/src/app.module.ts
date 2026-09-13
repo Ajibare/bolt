@@ -4,6 +4,10 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { validateEnv } from './config/env.validation.js';
 import { HealthModule } from './health/health.module.js';
+import { AuthModule } from './modules/auth/auth.module.js';
+import { MarketsModule } from './modules/markets/markets.module.js';
+import { StrategiesModule } from './modules/strategies/strategies.module.js';
+import { BacktestsModule } from './modules/backtests/backtests.module.js';
 import { RedisModule } from './redis/redis.module.js';
 
 @Module({
@@ -39,6 +43,10 @@ import { RedisModule } from './redis/redis.module.js';
     }),
     RedisModule,
     HealthModule,
+    AuthModule,
+    MarketsModule,
+    StrategiesModule,
+    BacktestsModule,
   ],
 })
 export class AppModule {}

@@ -21,10 +21,22 @@ export const envSchema = z.object({
     .string({ error: 'REDIS_URL is required' })
     .min(1, 'REDIS_URL is required'),
   WEB_ORIGIN: z.string().min(1).default('http://localhost:3000'),
-  JWT_SECRET: z.string().optional(),
-  JWT_EXPIRES_IN: z.string().optional(),
-  REFRESH_TOKEN_EXPIRES_IN: z.string().optional(),
+  JWT_SECRET: z
+    .string({ error: 'JWT_SECRET is required' })
+    .min(32, 'JWT_SECRET must be at least 32 characters'),
+  JWT_EXPIRES_IN: z
+    .string({ error: 'JWT_EXPIRES_IN must be a duration string such as 15m' })
+    .default('15m'),
+  REFRESH_TOKEN_EXPIRES_IN: z
+    .string({
+      error: 'REFRESH_TOKEN_EXPIRES_IN must be a duration string such as 7d',
+    })
+    .default('7d'),
   ENCRYPTION_KEY: z.string().optional(),
+  MARKET_DATA_BASE_URL: z
+    .string({ error: 'MARKET_DATA_BASE_URL must be a URL string' })
+    .url({ error: 'MARKET_DATA_BASE_URL must be a valid URL' })
+    .optional(),
   BYBIT_API_KEY: z.string().optional(),
   BYBIT_API_SECRET: z.string().optional(),
   BYBIT_ENVIRONMENT: z.string().optional(),

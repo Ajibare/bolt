@@ -12,7 +12,13 @@ async function bootstrap(): Promise<void> {
 
   app.setGlobalPrefix('api');
   app.enableShutdownHooks();
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
+    }),
+  );
   app.enableCors({
     origin: config.WEB_ORIGIN.split(',').map((origin) => origin.trim()),
   });

@@ -37,3 +37,11 @@ export const AI_PROCESSING_QUEUE = QUEUE_NAMES.aiProcessing;
 
 export const SUPPORTED_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"] as const;
 export type SupportedSymbol = (typeof SUPPORTED_SYMBOLS)[number];
+
+export function isSupportedSymbol(value: string): value is SupportedSymbol {
+  return (SUPPORTED_SYMBOLS as readonly string[]).includes(value);
+}
+
+export function unsupportedSymbolMessage(value: string): string {
+  return `Unsupported symbol "${value}". Supported: ${SUPPORTED_SYMBOLS.join(", ")}`;
+}

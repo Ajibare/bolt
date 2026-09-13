@@ -13,6 +13,22 @@
 **Containerization:** Docker
 **Status:** Development Roadmap
 
+> **Implementation status (2026-09-13)** — maintained alongside
+> `docs/PHASE_0_IMPLEMENTATION_PLAN.md`, which tracks per-step detail and
+> per-phase verification gates.
+>
+> - **Phase 0 Foundation** — implemented & unit-verified.
+> - **Phase 1 Auth & Users** — implemented & unit-verified (live-service items
+>   still pending DB/Redis/Docker).
+> - **Phase 2 Market Data** — implemented & unit-verified.
+> - **Phase 3 Strategy Engine** — implemented & unit-verified.
+> - **Phase 4 Backtesting** — implemented & unit-verified (steps A–D: engine,
+>   sizing/shorts/metrics, persistence, API + `/backtests` UI).
+> - **Phase 5 Risk Engine** — implemented & unit-verified (`@trading-bolt/risk-engine`:
+>   decimal-exact position sizing, 14-rule deterministic decision matrix,
+>   circuit breaker severities, session/symbol/side restrictions; runtime wiring
+>   into live account/order state deferred to Phase 6+).
+
 ---
 
 # 1. PURPOSE OF THIS DOCUMENT

@@ -14,3 +14,9 @@ export enum LogLevel {
   ERROR = "error",
   FATAL = "fatal",
 }
+
+export enum Role {
+  USER = "user",
+  ADMIN = "admin",
+  SUPER_ADMIN = "super_admin",
+}

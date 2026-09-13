@@ -1,8 +1,24 @@
 /**
  * @trading-bolt/trading-engine
  *
- * Phase 0 scaffold only. The strategy/order orchestration engine is
- * introduced during Phases 3-7. This package intentionally contains no
- * trading logic.
+ * Strategy definitions and the strategy registry. Strategies produce
+ * deterministic Signals from candles and never execute orders (AGENTS.md §9).
+ *
+ * Importing the package index registers the built-in strategy factories so
+ * `listStrategies` / `createStrategy` work out of the box; consumers may also
+ * call `registerStrategy` for additional factories.
  */
-export const TRADING_ENGINE_STATUS = "unimplemented" as const;
+import { registerStrategy } from "./registry.js";
+import { rsiMeanReversionFactory } from "./strategies/rsi-mean-reversion.js";
+import { smaCrossoverFactory } from "./strategies/sma-crossover.js";
+
+registerStrategy(smaCrossoverFactory);
+registerStrategy(rsiMeanReversionFactory);
+
+export * from "./errors.js";
+export * from "./signal.js";
+export * from "./strategy.js";
+export * from "./registry.js";
+export * from "./strategies/sma-crossover.js";
+export * from "./strategies/rsi-mean-reversion.js";
+export * from "./backtest/backtest.js";
