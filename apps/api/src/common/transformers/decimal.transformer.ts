@@ -7,5 +7,6 @@ import type { ValueTransformer } from 'typeorm';
  */
 export const decimalTransformer: ValueTransformer = {
   to: (value: unknown): unknown => value,
-  from: (value: unknown): string => String(value),
+  from: (value: unknown): string | null =>
+    value === null || value === undefined ? null : String(value),
 };

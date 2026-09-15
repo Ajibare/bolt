@@ -5,4 +5,5 @@ export * from "./types/auth.js";
 export * from "./types/market.js";
 export * from "./types/signal.js";
 export * from "./types/bot.js";
+export * from "./types/reconciliation.js";
 export * from "./financial/decimal.js";

@@ -1,8 +1,7 @@
-import { BOT_EXECUTION_QUEUE, type BotTickAction } from '@trading-bolt/shared';
+import { BOT_EXECUTION_QUEUE, type BotTickJob } from '@trading-bolt/shared';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import type { BotTickJob } from '@trading-bolt/shared';
 
 /**
  * Scheduling port for bot ticks. The production implementation enqueues onto
@@ -29,15 +28,11 @@ export class BullMqBotScheduler extends BotScheduler {
     job: BotTickJob,
     options?: { delayMs?: number },
   ): Promise<void> {
-    await this.queue.add(
-      'bot-tick',
-      job,
-      {
-        jobId: `${job.runId}:${job.action}`,
-        delay: options?.delayMs ?? 0,
-        removeOnComplete: 500,
-        removeOnFail: 1000,
-      },
-    );
+    await this.queue.add('bot-tick', job, {
+      jobId: `${job.runId}-${job.action}`,
+      delay: options?.delayMs ?? 0,
+      removeOnComplete: 500,
+      removeOnFail: 1000,
+    });
   }
 }

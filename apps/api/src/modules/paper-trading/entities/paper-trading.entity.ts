@@ -121,6 +121,27 @@ export class PaperOrderEntity {
   })
   brokerOrderId: string | null;
 
+  /** Executing provider ('paper' by default; 'bybit' for live bots). */
+  @Column({ name: 'provider', type: 'varchar', length: 16, default: 'paper' })
+  provider: string;
+
+  /** Latest broker-reported order status for reconciliation (AGENTS.md §17). */
+  @Column({
+    name: 'broker_status',
+    type: 'varchar',
+    length: 32,
+    nullable: true,
+  })
+  brokerStatus: string | null;
+
+  /** When the local row last matched broker state (reconciliation timestamp). */
+  @Column({
+    name: 'last_synced_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  lastSyncedAt: Date | null;
+
   @Column({ name: 'side', type: 'varchar', length: 8 })
   side: 'buy' | 'sell';
 

@@ -5,17 +5,31 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import type { BotStatus, BotTickAction, BotTickJob } from '@trading-bolt/shared';
+import type {
+  BotStatus,
+  BotTickAction,
+  BotTickJob,
+} from '@trading-bolt/shared';
+import type { RiskConfig } from '@trading-bolt/risk-engine';
 import {
   createStrategy,
   InvalidStrategyConfigError,
   StrategyNotFoundError,
 } from '@trading-bolt/trading-engine';
 import { MarketsService } from '../markets/markets.service.js';
+import { LiveTradingService } from '../live-trading/live-trading.service.js';
 import { PlacePaperOrderDto } from '../paper-trading/dto/place-paper-order.dto.js';
 import { PaperTradingService } from '../paper-trading/paper-trading.service.js';
-import { BotEntity, BotRunEntity } from './entities/bot.entity.js';
-import { BotRepository, BotRunRepository } from './bot.repository.js';
+import {
+  BotEntity,
+  BotRunCycleEntity,
+  BotRunEntity,
+} from './entities/bot.entity.js';
+import {
+  BotRepository,
+  BotRunCycleRepository,
+  BotRunRepository,
+} from './bot.repository.js';
 import { buildCycleIntent } from './bot-cycle.js';
 import { transition } from './bot-lifecycle.js';
 import { intervalToMs } from './bot-timing.js';
@@ -56,6 +70,8 @@ export class BotRunnerService {
     private readonly marketsService: MarketsService,
     private readonly paperTradingService: PaperTradingService,
     private readonly scheduler: BotScheduler,
+    private readonly cycles: BotRunCycleRepository,
+    private readonly liveTrading: LiveTradingService,
   ) {}
 
   async advance(job: BotTickJob): Promise<BotAdvanceOutcome> {
@@ -127,10 +143,19 @@ export class BotRunnerService {
     };
   }
 
-  private async runOneCycle(
-    bot: BotEntity,
-    run: BotRunEntity,
-  ): Promise<void> {
+  private async runOneCycle(bot: BotEntity, run: BotRunEntity): Promise<void> {
+    const cycle = new BotRunCycleEntity();
+    cycle.runId = run.id;
+    cycle.seq = run.cyclesRun + 1;
+    cycle.signalDirection = null;
+    cycle.signalReason = null;
+    cycle.signalAt = null;
+    cycle.orderId = null;
+    cycle.orderStatus = null;
+    cycle.orderSide = null;
+    cycle.orderSymbol = null;
+    cycle.rejectionReason = null;
+    cycle.error = null;
     try {
       await this.paperTradingService.settleLimitOrders(
         bot.userId,
@@ -162,14 +187,19 @@ export class BotRunnerService {
       bot.lastSignalDirection = signal.direction;
       bot.lastSignalReason = signal.reason;
       bot.lastSignalAt = new Date(signal.timestamp);
+      cycle.signalDirection = signal.direction;
+      cycle.signalReason = signal.reason;
+      cycle.signalAt = new Date(signal.timestamp);
 
       const ticker = await this.marketsService.getTicker(bot.symbol);
       if (ticker) {
-        const positions = await this.paperTradingService.getPositions(
-          bot.userId,
-          bot.paperAccountId,
-        );
-        const held = positions.find((p) => p.symbol === bot.symbol);
+        const heldQuantity =
+          bot.executionMode === 'PAPER'
+            ? await this.paperHeldQuantity(bot)
+            : await this.liveTrading.getHeldQuantity(
+                bot.paperAccountId,
+                bot.symbol,
+              );
         const intent = buildCycleIntent(
           {
             quantity: bot.quantity,
@@ -178,11 +208,17 @@ export class BotRunnerService {
           },
           signal.direction,
           ticker.lastPrice,
-          held ? held.quantity : null,
+          heldQuantity,
         );
 
         if (intent) {
-          await this.submitCycleOrder(bot, run, intent, signal.timestamp);
+          await this.submitCycleOrder(
+            bot,
+            run,
+            cycle,
+            intent,
+            signal.timestamp,
+          );
         }
       }
 
@@ -195,6 +231,7 @@ export class BotRunnerService {
         botId: bot.id,
         runId: run.id,
         error: message,
+        stack: (error as Error).stack,
       });
       if (bot.status === 'RUNNING') {
         bot.status = transition('RUNNING', 'ERROR');
@@ -204,45 +241,89 @@ export class BotRunnerService {
       run.status = 'ERROR';
       run.error = message;
       bot.lastError = message;
+      cycle.error = message;
     }
+    await this.cycles.save(cycle);
   }
 
   private async submitCycleOrder(
     bot: BotEntity,
     run: BotRunEntity,
-    intent: { side: 'buy' | 'sell'; quantity: string; reduceOnly: boolean; stopLoss?: string; takeProfit?: string },
+    cycle: BotRunCycleEntity,
+    intent: {
+      side: 'buy' | 'sell';
+      quantity: string;
+      reduceOnly: boolean;
+      stopLoss?: string;
+      takeProfit?: string;
+    },
     signalTimestamp: number,
   ): Promise<void> {
-    const dto: PlacePaperOrderDto = {
-      symbol: bot.symbol,
-      side: intent.side,
-      type: 'market',
-      quantity: intent.quantity,
-      stopLoss: intent.stopLoss,
-      takeProfit: intent.takeProfit,
-      reduceOnly: intent.reduceOnly,
-      clientOrderId: `${run.id}:${signalTimestamp}`,
-    };
+    const clientOrderId =
+      bot.executionMode === 'PAPER'
+        ? `${run.id}:${signalTimestamp}`
+        : `bolt-${run.id.slice(0, 8)}-${signalTimestamp}`;
 
     try {
-      const order = await this.paperTradingService.placeOrder(
-        bot.userId,
-        bot.paperAccountId,
-        dto,
-      );
+      const order =
+        bot.executionMode === 'PAPER'
+          ? await this.paperTradingService.placeOrder(
+              bot.userId,
+              bot.paperAccountId,
+              {
+                symbol: bot.symbol,
+                side: intent.side,
+                type: 'market',
+                quantity: intent.quantity,
+                stopLoss: intent.stopLoss,
+                takeProfit: intent.takeProfit,
+                reduceOnly: intent.reduceOnly,
+                clientOrderId,
+              } as PlacePaperOrderDto,
+              bot.riskConfig as Partial<RiskConfig>,
+            )
+          : await this.liveTrading.placeOrder({
+              accountId: bot.paperAccountId,
+              botId: bot.id,
+              symbol: bot.symbol,
+              side: intent.side,
+              type: 'market',
+              quantity: intent.quantity,
+              stopLoss: intent.stopLoss,
+              takeProfit: intent.takeProfit,
+              reduceOnly: intent.reduceOnly,
+              clientOrderId,
+              riskConfig: bot.riskConfig as Partial<RiskConfig>,
+            });
       bot.lastOrderId = order.id;
       bot.lastOrderStatus = order.status;
       bot.lastOrderSymbol = order.symbol;
       run.ordersPlaced += 1;
+      cycle.orderId = order.id;
+      cycle.orderStatus = order.status;
+      cycle.orderSide = order.side;
+      cycle.orderSymbol = order.symbol;
     } catch (error) {
       if (
         error instanceof BadRequestException &&
         error.message.includes(RISK_REJECTION_MESSAGE)
       ) {
         run.ordersRejected += 1;
+        cycle.rejectionReason = error.message;
         return;
       }
       throw error;
     }
+  }
+
+  private async paperHeldQuantity(bot: BotEntity): Promise<string | null> {
+    const positions = await this.paperTradingService.getPositions(
+      bot.userId,
+      bot.paperAccountId,
+    );
+    return (
+      positions.find((position) => position.symbol === bot.symbol)?.quantity ??
+      null
+    );
   }
 }

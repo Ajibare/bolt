@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import {
   PaperAccountEntity,
   PaperOrderEntity,
@@ -82,6 +82,37 @@ export class TypeOrmPaperOrderRepository extends PaperOrderRepository {
       },
       order: { createdAt: 'DESC' },
       take: options?.limit,
+    });
+  }
+
+  listPendingLive(accountId?: string): Promise<PaperOrderEntity[]> {
+    return this.repo.find({
+      where: {
+        provider: 'bybit',
+        status: In(['SUBMITTED', 'ACCEPTED', 'PARTIALLY_FILLED']),
+        ...(accountId ? { accountId } : {}),
+      },
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  async listLiveAccounts(): Promise<string[]> {
+    const rows = await this.repo
+      .createQueryBuilder('po')
+      .select('DISTINCT po.account_id', 'accountId')
+      .where('po.provider = :provider', { provider: 'bybit' })
+      .getRawMany<{ accountId: string }>();
+    return rows.map((row) => row.accountId);
+  }
+
+  findLiveByBrokerOrderIds(
+    brokerOrderIds: string[],
+  ): Promise<PaperOrderEntity[]> {
+    if (brokerOrderIds.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.repo.find({
+      where: { provider: 'bybit', brokerOrderId: In(brokerOrderIds) },
     });
   }
 }

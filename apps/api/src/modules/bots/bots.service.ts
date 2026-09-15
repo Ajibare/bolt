@@ -11,15 +11,38 @@ import {
   StrategyNotFoundError,
 } from '@trading-bolt/trading-engine';
 import { validateRiskConfig, type RiskConfig } from '@trading-bolt/risk-engine';
+import { BrokersService } from '../brokers/brokers.service.js';
+import { LiveTradingService } from '../live-trading/live-trading.service.js';
 import { PaperTradingService } from '../paper-trading/paper-trading.service.js';
 import { CreateBotDto } from './dto/create-bot.dto.js';
-import { BotEntity, BotRunEntity } from './entities/bot.entity.js';
-import { BotRepository, BotRunRepository } from './bot.repository.js';
+import {
+  BotEntity,
+  BotRunCycleEntity,
+  BotRunEntity,
+} from './entities/bot.entity.js';
+import {
+  BotRepository,
+  BotRunCycleRepository,
+  BotRunRepository,
+} from './bot.repository.js';
 import { canStart, transition } from './bot-lifecycle.js';
 import { BotScheduler } from './bot-scheduler.js';
 
-const PAPER_ONLY_MESSAGE =
-  'Only PAPER execution mode is available in the MVP; DEMO/TESTNET/LIVE require broker credentials (Phase 8+)';
+/** Execution modes that run against the live Bybit broker (AGENTS.md §11). */
+const LIVE_EXECUTION_MODES = ['DEMO', 'TESTNET', 'LIVE'] as const;
+
+/**
+ * A bot's execution mode must match the configured Bybit environment so a
+ * "demo" bot can never route real orders to mainnet (fail-closed).
+ */
+const LIVE_MODE_TO_BROKER_ENVIRONMENT: Record<
+  (typeof LIVE_EXECUTION_MODES)[number],
+  'demo' | 'testnet' | 'mainnet'
+> = {
+  DEMO: 'demo',
+  TESTNET: 'testnet',
+  LIVE: 'mainnet',
+};
 
 export interface BotMonitorView {
   bot: BotEntity;
@@ -50,14 +73,15 @@ export class BotsService {
   constructor(
     private readonly bots: BotRepository,
     private readonly runs: BotRunRepository,
+    private readonly cycles: BotRunCycleRepository,
     private readonly paperTradingService: PaperTradingService,
     private readonly scheduler: BotScheduler,
+    private readonly brokers: BrokersService,
+    private readonly liveTrading: LiveTradingService,
   ) {}
 
   async create(userId: string, dto: CreateBotDto): Promise<BotEntity> {
-    if (dto.executionMode !== 'PAPER') {
-      throw new BadRequestException(PAPER_ONLY_MESSAGE);
-    }
+    this.assertExecutionModeAllowed(dto.executionMode);
     this.validateStrategy(dto.strategyId, dto.config);
     if (dto.riskConfig !== undefined) {
       try {
@@ -87,7 +111,7 @@ export class BotsService {
     bot.interval = dto.interval;
     bot.riskConfig = dto.riskConfig ?? {};
     bot.paperAccountId = dto.paperAccountId;
-    bot.executionMode = 'PAPER';
+    bot.executionMode = dto.executionMode as BotEntity['executionMode'];
     bot.status = 'DRAFT';
     bot.quantity = dto.quantity;
     bot.stopLossPercent = dto.stopLossPercent;
@@ -107,9 +131,7 @@ export class BotsService {
   async start(userId: string, botId: string): Promise<BotEntity> {
     const bot = await this.ownedBot(userId, botId);
     if (!canStart(bot.status)) {
-      throw new ConflictException(
-        `Cannot start a bot in status ${bot.status}`,
-      );
+      throw new ConflictException(`Cannot start a bot in status ${bot.status}`);
     }
     const active = await this.runs.findActiveByBotId(bot.id);
     if (active) {
@@ -165,6 +187,31 @@ export class BotsService {
     return this.bots.save(bot);
   }
 
+  /**
+   * Emergency stop (AGENTS.md §19): flattens the broker-held position for a
+   * live bot (reduce-only, never blocked by the circuit breaker), cancels its
+   * open orders, and always stops the bot — even if flattening fails, the bot
+   * can no longer submit new orders.
+   */
+  async emergencyStop(userId: string, botId: string): Promise<BotEntity> {
+    const bot = await this.ownedBot(userId, botId);
+    try {
+      if (bot.executionMode !== 'PAPER') {
+        await this.liveTrading.emergencyFlatten({
+          accountId: bot.paperAccountId,
+          botId: bot.id,
+          symbol: bot.symbol,
+        });
+      }
+    } finally {
+      transition(bot.status, 'STOPPING');
+      bot.status = transition('STOPPING', 'STOPPED');
+      await this.runsStopActive(bot.id);
+      await this.bots.save(bot);
+    }
+    return bot;
+  }
+
   /** Explicit recovery from a failure — bots never resume from ERROR automatically. */
   async recover(userId: string, botId: string): Promise<BotEntity> {
     const bot = await this.ownedBot(userId, botId);
@@ -173,12 +220,22 @@ export class BotsService {
     return this.bots.save(bot);
   }
 
-  async listRuns(
-    userId: string,
-    botId: string,
-  ): Promise<BotRunEntity[]> {
+  async listRuns(userId: string, botId: string): Promise<BotRunEntity[]> {
     await this.ownedBot(userId, botId);
     return this.runs.listByBotId(botId, { limit: 20 });
+  }
+
+  async listRunCycles(
+    userId: string,
+    botId: string,
+    runId: string,
+  ): Promise<BotRunCycleEntity[]> {
+    const bot = await this.ownedBot(userId, botId);
+    const run = await this.runs.findById(runId);
+    if (!run || run.botId !== bot.id) {
+      throw new NotFoundException('Bot run not found');
+    }
+    return this.cycles.listByRunId(runId, { limit: 50 });
   }
 
   async monitor(userId: string, botId: string): Promise<BotMonitorView> {
@@ -240,6 +297,37 @@ export class BotsService {
       active.status = 'STOPPED';
       active.stoppedAt = new Date();
       await this.runs.save(active);
+    }
+  }
+
+  private assertExecutionModeAllowed(executionMode: string): void {
+    if (executionMode === 'PAPER') {
+      return;
+    }
+    if (executionMode === 'BACKTEST') {
+      throw new BadRequestException(
+        'BACKTEST execution is not available on bots — run a backtest instead',
+      );
+    }
+    const expectedEnvironment =
+      LIVE_MODE_TO_BROKER_ENVIRONMENT[
+        executionMode as keyof typeof LIVE_MODE_TO_BROKER_ENVIRONMENT
+      ];
+    if (!expectedEnvironment) {
+      throw new BadRequestException(
+        `Unsupported execution mode: ${executionMode}`,
+      );
+    }
+    if (!this.brokers.isLiveConfigured()) {
+      throw new BadRequestException(
+        `Execution mode ${executionMode} requires live broker credentials (BYBIT_API_KEY/BYBIT_API_SECRET)`,
+      );
+    }
+    const configuredEnvironment = this.brokers.environment();
+    if (configuredEnvironment !== expectedEnvironment) {
+      throw new BadRequestException(
+        `Execution mode ${executionMode} is incompatible with BYBIT_ENVIRONMENT "${configuredEnvironment}" (requires "${expectedEnvironment}")`,
+      );
     }
   }
 

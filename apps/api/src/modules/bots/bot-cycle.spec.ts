@@ -35,6 +35,17 @@ describe('buildCycleIntent', () => {
     expect(intent?.stopLoss).toBe('198');
   });
 
+  it('omits take-profit when the policy is undefined', () => {
+    const intent = buildCycleIntent(
+      { quantity: '1', stopLossPercent: '0.01', takeProfitPercent: undefined },
+      'buy',
+      '200',
+      null,
+    );
+    expect(intent?.takeProfit).toBeUndefined();
+    expect(intent?.stopLoss).toBe('198');
+  });
+
   it('builds a reduce-only close of the full held quantity', () => {
     const intent = buildCycleIntent(params, 'sell', '150', '3');
     expect(intent).toEqual({

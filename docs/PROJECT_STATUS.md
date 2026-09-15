@@ -1,0 +1,591 @@
+# Trading Bolt — Project Status
+
+**Last updated:** 2026-09-15 (Phase 8 increment 7: frontend live broker monitor + order controls)
+**Branch:** `main`
+**Last commit:** `95da872` — "update on bolt" (Phase 7 Bot Engine, 2026-09-13)
+
+---
+
+## Current Phase
+
+**Phase 8 — Bybit Demo/Testnet** (IN PROGRESS — increments 1–7 done)
+
+---
+
+## Overall Status
+
+| Phase | Name                       | Status                                         |
+| ----- | -------------------------- | ---------------------------------------------- |
+| 0     | Foundation                 | COMPLETE                                       |
+| 1     | Authentication & Users     | COMPLETE (unit-verified; live-service pending) |
+| 2     | Market Data                | COMPLETE (unit-verified; live-service pending) |
+| 3     | Strategy Engine            | COMPLETE (unit-verified)                       |
+| 4     | Backtesting Engine         | COMPLETE (unit-verified, steps A–D)            |
+| 5     | Risk Engine                | COMPLETE (unit-verified)                       |
+| 6     | Paper Trading              | COMPLETE (unit-verified, steps A–D)            |
+| 7     | Bot Engine                 | COMPLETE (unit + E2E verified)                 |
+| 8     | Bybit Demo/Testnet         | IN PROGRESS                                    |
+| 9     | Live Trading               | NOT STARTED                                    |
+| 10    | Portfolio & Analytics      | NOT STARTED                                    |
+| 11    | Notifications & Monitoring | NOT STARTED                                    |
+| 12    | AI Features                | NOT STARTED                                    |
+| 13    | Production Hardening       | NOT STARTED                                    |
+
+---
+
+## Completed Work
+
+### Phase 0 — Foundation
+
+- pnpm monorepo (apps/web, apps/api, apps/worker; packages/shared + 5 trading packages)
+- NestJS API with `/api/health`, `/api/ready`, zod env validation, structured JSON logging
+- Next.js web app (App Router, TanStack Query, Tailwind CSS, shadcn/ui-style utils)
+- BullMQ worker consuming a smoke queue (graceful shutdown)
+- TypeORM with PostgreSQL (autoLoadEntities, manual migrations via tsx)
+- Redis module (ioredis) for health checks and BullMQ
+- Docker Compose (postgres, redis, api, worker, web) with healthchecks
+- Local fallback script (`scripts/dev.sh`)
+- GitHub Actions CI workflow (`.github/workflows/ci.yml`)
+- ESLint (eslint + oxlint), Prettier, TypeScript base configs
+- `.env.example`, `.editorconfig`, `.gitignore`, `.dockerignore`, `.npmrc`
+- Unit tests: shared (23), indicators (30), trading-engine (47), risk-engine (51), api (237), broker-adapters (73) = **461 total**
+
+### Phase 1 — Authentication & Users
+
+- `users` entity (email, password hash, role, timestamps) + migration `CreateUsers1`
+- `sessions` entity (opaque refresh token as sha256 digest, revoked_at, expires_at) + migration `CreateSessions2`
+- `AuthService`: register, login, logout, me; JWT access + refresh; bcryptjs hashing
+- `JwtAuthGuard`, `CurrentUser` decorator, `Roles` + `RolesGuard`
+- DTO validation (email normalization, 8–72 char password, whitelist pipe)
+- Web: `/login`, `/register`, `/dashboard` pages; `AuthProvider`; localStorage token storage (MVP)
+
+### Phase 2 — Market Data
+
+- `MarketDataProvider` abstract class; `BybitMarketDataProvider` (public REST)
+- Bybit KLine/Ticker/Trade/Orderbook mappers with timestamp dedup + validation
+- `market_candles` entity + migration `CreateMarketCandles3`; cache-aside reads
+- `GET /api/markets/symbols`, `GET /api/markets/:symbol/candles`, `GET /api/markets/:symbol/ticker`
+- Error classification: `MarketDataError` with HTTP/rate-limit/provider codes
+- Web: `/markets` page with TradingView Lightweight Charts candlestick chart
+
+### Phase 3 — Strategy Engine
+
+- `@trading-bolt/indicators` — SMA, EMA, RSI (Wilder), crossovers (decimal.js, deterministic, no look-ahead)
+- `@trading-bolt/trading-engine` — `Strategy` interface, `StrategyFactory`, `StrategyRegistry`
+- Built-in strategies: `sma-crossover`, `rsi-mean-reversion` (zod-validated config)
+- `GET /api/strategies`, `POST /api/strategies/evaluate` (returns Signal, never orders)
+
+### Phase 4 — Backtesting
+
+- `runBacktest(config)` — deterministic, decimal-backed, long/short simulation
+- Fees, slippage, position sizing, Sharpe, profit factor, max drawdown
+- `backtests`/`backtest_trades`/`backtest_equity_points` entities + migration 4
+- `POST /api/backtests` (run + persist), `GET /api/backtests`, `GET /api/backtests/:id`
+- Web: `/backtests` (run form), `/backtests/[id]` (equity chart, metrics, trade table)
+
+### Phase 5 — Risk Engine
+
+- `@trading-bolt/risk-engine` — position sizing, 14-rule evaluation matrix, circuit breaker
+- `evaluateOrder(proposal, account, config)` → APPROVED/REJECTED with reasons
+- `CircuitBreakerRegistry` (strategy/bot/account/global severities, no auto-resume)
+- `reduce-only` rule (exits validated, skip opening rules)
+- `validateRiskConfig` (server-side policy parsing, fails closed)
+
+### Phase 6 — Paper Trading
+
+- `@trading-bolt/broker-adapters` — async `BrokerAdapter` interface
+- `PaperBroker` — deterministic in-memory execution, idempotent per `clientOrderId`
+- `paper_accounts`, `paper_orders`, `paper_positions`, `paper_portfolio_snapshots` + migration 5
+- Risk-gated `POST /paper/accounts/:id/orders` (evaluateOrder → PaperBroker → persist)
+- `GET /paper/accounts/:id/orders|positions|portfolio`; JWT-protected, ownership enforced
+
+### Phase 7 — Bot Engine (COMPLETE — see "Phase 7 Details")
+
+- Bot lifecycle state machine (DRAFT→STARTING→RUNNING→PAUSED→STOPPING→STOPPED/ERROR)
+- Bot execution cycle: settle limits → fetch candles → evaluate strategy → build intent → risk-gated order
+- BullMQ `bot-execution` queue; `BotExecutionProcessor` + `BotRunnerService`
+- Bot CRUD + lifecycle API (start/pause/resume/stop/recover/monitor/runs)
+- `bots`/`bot_runs` entities + migration 6
+- `settleLimitOrders` in PaperTradingService (resting limit fill from market tick)
+- Bot types in `@trading-bolt/shared` (BotStatus, BotExecutionMode, BotTickJob)
+- Per-cycle signal/order persistence: `bot_run_cycles` entity + migration 7
+  (`CreateBotRunCycles1700000000007`), port `BotRunCycleRepository` +
+  `TypeOrmBotRunCycleRepository`, runner writes one record per tick (signal,
+  order, rejection reason or error) for both success and error paths
+- `GET /api/bots/:botId/runs/:runId/cycles` (JWT + ownership 404-guarded)
+- Web: cycle-history list in the `/bots` monitor panel (refetch 5s)
+- Bot-cycle E2E test through the real BullMQ worker + stub market data provider
+  (9 E2E tests total)
+- Unit tests: bot-lifecycle (7), bot-cycle (9 after TP-undefined fix), bot-timing (3),
+  runner (15 incl. 4 new persistence tests) = 34 bot tests
+
+### Phase 8 — Live Trading (IN PROGRESS)
+
+- Increment 7: frontend live broker monitor + order controls (AGENTS.md §22)
+  - New `/live-broker` page (JWT-gated): polls `GET /api/brokers/account` every 5s and renders
+    environment badge, overview gems (equity/free/open counts), circuit breakers, balances,
+    positions and open orders. Fail-closed empty state when no broker is configured; per-surface
+    broker failures render as amber warnings instead of blanking the page
+  - **Cancel open orders** from the UI: the account view now attaches the local `paper_orders` id
+    to each broker open order (`LiveOrderView.localId`, enriched in `getAccountView` via
+    `PaperOrderRepository.findLiveByBrokerOrderIds`); orders that predate/are external to Trading
+    Bolt show "external" and cannot be cancelled here. Cancel calls the ownership-checked
+    `POST /api/brokers/orders/:orderId/cancel` (server-side auth stays authoritative)
+  - **Emergency stop** wired into the `/bots` list: a red "Emergency stop" button appears on
+    live-capable bots (executionMode ≠ PAPER) in RUNNING/PAUSED/STARTING/STOPPING, with a confirm
+    dialog before `POST /api/bots/:botId/emergency-stop`
+  - Navigation: "Live broker monitor" link in the `/bots` header + a "Live broker" button on the
+    dashboard; `lib/brokers.ts` typed client (`getAccountView`, `cancelLiveOrder`),
+    `lib/bots.ts` adds `emergencyStopBot`
+  - Unit test added: getAccountView local-id enrichment (1) — api package now **252 unit tests**
+    (476 total); e2e stays 15; web build passes with the new route
+- Increment 6: live account monitor + position reconciliation (AGENTS.md §17/§22)
+  - **Monitor surface**: `GET /api/brokers/account` → `LiveAccountController` → `LiveTradingService
+.getAccountView()`; JWT-guarded, read-only. Returns `configured/environment`, wallet `balances` +
+    summed `equity`/`freeBalance`, broker `positions` + `openOrders`, and open circuit breakers —
+    never credentials. Fails closed to `configured:false` without an adapter; per-surface adapter
+    failures degrade to `warnings` instead of failing the whole request (a broker hiccup does not
+    blank the account)
+  - **Position reconciliation**: `PositionReconciliationService` computes the net position implied by
+    the local live order ledger (signed fill identity `Σ signed(qty)` — every buy +, every sell −,
+    openings and reduce-only closes alike) across every account with live orders
+    (`PaperOrderRepository.listLiveAccounts`), compares against `adapter.getPositions()` (all
+    symbols), and logs `POSITION_DIVERGENCE` for any symbol whose local net differs from the broker
+  - Read-only by design: never mutates the ledger and never auto-trades a fix; a position that
+    predates Trading Bolt (broker holds it, ledger never touched it) is a legit divergence and is
+    flagged, not silently adopted. Unreachable broker → account skipped + logged
+  - Wired into `ReconciliationProcessor`: every `order-reconciliation` job now also runs the position
+    pass and returns a `ReconciliationRunOutcome` (order outcome + `positions` sub-outcome)
+  - Unit tests added: position-reconciliation.service (10), live-trading getAccountView (4) — api
+    package now **251 unit tests** (475 total); e2e now 15 tests (+account monitor 200/401)
+- Increment 5: live order management + emergency controls (AGENTS.md §16/§17/§19)
+  - **Persistent circuit breakers**: migration 9 (`circuit_breakers`) + `CircuitBreakerEntity`,
+    abstract `CircuitBreakerRepository` + TypeORM impl, wired through `CircuitBreakerService`
+    (`assertTradingAllowed` is now async and persists account/bot trips; `reset` deletes the row;
+    `onApplicationBootstrap` hydrates the registry so a restart never auto-closes an OPEN breaker)
+  - **Live order cancellation**: `POST /api/brokers/orders/:orderId/cancel` → `LiveOrdersController`
+    → `LiveTradingService.cancelOrder(userId, orderId)` (server-side ownership via
+    `PaperAccountRepository`, only `provider='bybit'` orders, idempotent on already-cancelled,
+    refuses FILLED/REJECTED/FAILED, never fabricates the CANCELLED status — reconciliation confirms
+    the broker state), then enqueues reconciliation
+  - **Emergency stop**: `POST /api/bots/:botId/emergency-stop` → `BotsService.emergencyStop` →
+    `LiveTradingService.emergencyFlatten`: cancels open live orders on the symbol and flattens the
+    broker-held position with reduce-only market orders (which pass open breakers by design in case
+    the breaker itself needs de-risking). The bot always transitions to STOPPED even if flattening
+    fails (failure contained — it can no longer submit orders)
+  - Unit tests added: circuit-breaker persistence/hydration (spec now 9, repo-backed),
+    live-trading cancel (6) + emergency flatten (3), bots emergency-stop (3) — api package grew to
+    **251 unit tests** (475 total) by increment 6; e2e now 15 tests (+account monitor 200/401)
+- Increment 4: live bot routing + circuit-breaker layer (AGENTS.md §9/§10/§19)
+  - New `live-trading` module: `LiveTradingService` (risk-gated broker execution),
+    `CircuitBreakerService` (account/bot/global severities), `LiveAccountRiskTracker`
+  - `BotRunnerService` now routes by `ExecutionMode`: PAPER → `PaperTradingService` (unchanged);
+    DEMO/TESTNET/LIVE → `LiveTradingService.placeOrder` which ALWAYS runs the order through
+    `evaluateOrder` + the circuit breaker BEFORE the adapter, persists a `provider='bybit'`
+    `SUBMITTED` row, and enqueues reconciliation (fills converge via `getOrder`, never guessed)
+  - Idempotency: `clientOrderId` dedupe before any broker call (AGENTS.md §16); live orders use a
+    Bybit-safe `bolt-<runId8>-<timestamp>` suffix (no `:`, ≤36 chars)
+  - Circuit breaker: trips the account + bot breakers on daily-loss/drawdown breaches
+    (observed broker equity via the intraday tracker — honest values, never guesses), throws
+    `CircuitBreakerOpenError`, which flips the bot to ERROR with **no auto-resume**; reduce-only
+    exits always pass (a blocked exit could prevent de-risking)
+  - Live bot-creation gate lifted: DEMO/TESTNET/LIVE require a fully configured live broker AND
+    a mode↔environment match (`DEMO→demo`, `TESTNET→testnet`, `LIVE→mainnet`) — a "demo" bot can
+    never route to mainnet (fail-closed)
+  - Broker held-quantity facts for live bots come from the adapter (`getPositions`), so a live
+    bot never double-positions against its broker position
+  - Unit tests: circuit-breaker.service (9), live-trading.service (10), bots.service gate (5),
+    runner live-routing (3) — api package then 223 unit tests (now superseded by increment 5)
+- Increment 3: `OrderReconciliationService` + `order-reconciliation` BullMQ queue
+  - Compares pending live-provider orders against the broker's `getOrder` without fabricating
+    fills; syncs fills/partial fills, fails orders the broker no longer knows (never left
+    dangling), and logs divergences (terminal-local/open-remote, identity mismatch) as warnings
+  - `ReconciliationProducer.enqueue(accountId?, delayMs?)` extracted and shared by the scheduler
+    (30s periodic, live-only) and `LiveTradingService` (immediate after a live placement)
+- Increment 2: `BrokersModule` + `BrokersService` (env-backed registry) and `GET /api/brokers`
+  - Env validation hardens `BYBIT_*`: `BYBIT_ENVIRONMENT` enum (default `demo`) and the key/secret
+    pair rule (partial pairs are refused at boot — fail-closed)
+  - `BybitAdapter` constructed lazily from env only when a full credential pair is present;
+    credentials never leave the process and never appear in API responses; public
+    `environment()` accessor supports the mode↔env bot gate
+  - Migration 8 (`AddBrokerReconciliation`): `provider` (default `paper`), `broker_status`,
+    `last_synced_at` on `paper_orders` — groundwork for order reconciliation (AGENTS.md §17)
+  - Unit tests: env.validation (7), brokers.service (6); e2e now 11 tests (2 brokers endpoint tests)
+- Increment 1: `BybitAdapter` (`@trading-bolt/broker-adapters/src/bybit/`)
+  - Signed REST client (`X-BAPI-*` HMAC-SHA256 headers), injectable `FetchLike` transport
+  - `placeOrder` → `POST /v5/order/create` with `orderLinkId` = `clientOrderId` (idempotency key);
+    fresh market orders returned as `SUBMITTED` (never a guessed fill state)
+  - `cancelOrder`, `getOrder`, `getOpenOrders`, `getPositions`, `getAccountState` mapped to v5
+  - Order-status mapping to the allowed `BrokerOrderStatus` set (unknown statuses fail loudly)
+  - Instrument filters (qty lot size / price tick) normalize quantities + prices
+  - Fail-closed: constructor requires `apiKey`/`apiSecret`; `environment` defaults to `demo`
+  - Unit tests: adapter (14), mappers (24) — broker-adapters package now 73 tests
+- Real demo/testnet smoke test pending credentials (mocks only for now)
+
+---
+
+## Phase 7 Details — What Is Done
+
+| Component                                  | Status                                                                           |
+| ------------------------------------------ | -------------------------------------------------------------------------------- |
+| Bot lifecycle state machine                | COMPLETE (strict transition matrix)                                              |
+| Bot execution order-intent derivation      | COMPLETE (`buildCycleIntent`, entry/exit/hold)                                   |
+| Bot timing (interval → ms)                 | COMPLETE                                                                         |
+| Bot scheduler abstraction (BullMQ queue)   | COMPLETE                                                                         |
+| Bot execution processor                    | COMPLETE (consumes `bot-execution` queue)                                        |
+| Bot runner service (advance one tick)      | COMPLETE                                                                         |
+| Bot entity + BotRun entity                 | COMPLETE (TypeORM)                                                               |
+| Bot repository + TypeORM impl              | COMPLETE                                                                         |
+| Bot service (CRUD + lifecycle)             | COMPLETE                                                                         |
+| Bot controller (all endpoints)             | COMPLETE (JWT-guarded)                                                           |
+| Bot module wiring (AppModule)              | COMPLETE                                                                         |
+| Bot migration                              | COMPLETE (`CreateBots6`)                                                         |
+| Settle resting limit orders                | COMPLETE                                                                         |
+| Bot risk config validation at creation     | COMPLETE                                                                         |
+| Bot riskConfig wired to per-bot evaluation | COMPLETE (runner passes bot `riskConfig` to `placeOrder`, defaults when omitted) |
+| Unit tests (lifecycle, cycle, timing)      | COMPLETE                                                                         |
+| Unit tests (risk-config pass-through)      | COMPLETE (2 in paper-trading spec)                                               |
+| Frontend `/bots` page                      | COMPLETE (create + lifecycle + monitor UI, `lib/bots.ts` typed JWT client)       |
+| Per-cycle signal/order persistence         | COMPLETE (`bot_run_cycles` table, migration 7, runner writes per tick)           |
+| Bot-runner unit tests (persistence)        | COMPLETE (4 tests: success, rejection, error, seq numbering)                     |
+| Bot-cycle E2E through BullMQ               | COMPLETE (stub provider, API-driven, assertions on the persisted cycle row)      |
+| Web cycle-history view                     | COMPLETE (monitor panel, 5s refetch)                                             |
+| `GET :botId/runs/:runId/cycles` endpoint   | COMPLETE (JWT + ownership 404)                                                   |
+
+---
+
+## Phase 7 Details — What Is NOT Done
+
+| Gap                                     | Severity | Description                                                                                                                   |
+| --------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| ~~Integration tests (Docker/DB/Redis)~~ | ~~Low~~  | **DONE 2026-09-15** — `db:migrate` (7 migrations) and `pnpm test:e2e` (9 tests) pass against Docker Compose Postgres + Redis. |
+| CI verification                         | Low      | GitHub Actions workflow exists but has not been triggered on this branch.                                                     |
+| ~~Per-cycle signal/order persistence~~  | ~~Med~~  | **DONE 2026-09-15** — `bot_run_cycles` table persisted per tick, E2E-verified.                                                |
+| `/bots/[id]` detail page                | Low      | Detailed single-bot view is optional; `/bots` list + monitor panels are functional.                                           |
+
+---
+
+## Environment Status
+
+| Component  | Status                   | Notes                                                                                                               |
+| ---------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| Frontend   | READY                    | `pnpm dev:web` (Next.js 16, port 3000)                                                                              |
+| Backend    | READY                    | `pnpm dev:api` / `start:prod` (NestJS 12, port 4000) — boot verified against live infra                             |
+| Worker     | READY                    | `pnpm dev:worker` (BullMQ smoke queue)                                                                              |
+| PostgreSQL | READY (Docker)           | `docker compose up -d postgres` — postgres:17-alpine, healthy                                                       |
+| Redis      | READY (Docker)           | `docker compose up -d redis` — redis:7-alpine, healthy                                                              |
+| Docker     | READY                    | Docker 29.7.2 + Compose v5.5.1 available on dev machine (was previously unavailable)                                |
+| Tests      | PASS (476 unit + 15 e2e) | Shared 23, indicators 30, trading-engine 47, risk-engine 51, api 252, broker-adapters 73; 15 e2e in app.e2e-spec.ts |
+| TypeScript | PASS                     | All 9 workspaces type-check cleanly                                                                                 |
+| Lint       | PASS                     | eslint + oxlint, 0 warnings                                                                                         |
+| Formatting | PASS                     | All files conform to Prettier                                                                                       |
+| Build      | PASS                     | All packages/apps build successfully                                                                                |
+
+---
+
+## Known Problems
+
+1. ~~**`.env.example` has an uncommitted real JWT_SECRET**~~ — **FIXED 2026-09-15**: replaced
+   `JWT_SECRET=tuyuyuyiuiuiu` (13 chars, failed the ≥32-char zod validation and was not a
+   placeholder) with `JWT_SECRET=generate-a-random-32-character-minimum-secret`. `.env.example`
+   now contains placeholders only, per AGENTS.md §21.
+
+2. **MarketCandleEntity.interval column type** — **FIXED 2026-09-15**: `@Column({ length: 8 })`
+   on the `CandleInterval` union type made TypeORM resolve the PG type to `Object`, which
+   failed at entity-metadata validation during app boot ("Data type \"Object\" ... not supported
+   by \"postgres\""). Fixed by declaring `type: 'varchar'`, matching the migration
+   (`character varying(8)`). Unit tests did not catch this because they do not touch a real
+   Postgres connection; the E2E suite now guards it.
+
+3. ~~**Backtests API is not JWT-guarded**~~ — **FIXED 2026-09-15**: added class-level
+   `@UseGuards(JwtAuthGuard)` to `backtests.controller.ts` (matching bots/paper endpoints),
+   imported `UsersModule` into `BacktestsModule` for the guard's dependencies, and updated the web
+   client (`lib/backtests.ts` now attaches the JWT) + both `/backtests` pages (auth-gated, redirect
+   to `/login`). E2E assertions added for `GET/POST /api/backtests` returning 401 without a token
+   (AGENTS.md §23).
+
+4. ~~**Bot cycles record counters only**~~ — **DONE 2026-09-15**: per-tick signal/order history is
+   now persisted in `bot_run_cycles` (migration 7) and surfaced via the API + `/bots` UI.
+
+5. **Candle ordering bug (cache path)** — **FIXED 2026-09-15**: `MarketsService.getCandles` served
+   `findLatest` rows newest-first (DESC at `typeorm-market-candle.repository.ts`), but strategies,
+   backtests and the lightweight-charts UI all require chronological (oldest-first) order. The
+   cache path therefore produced wrong signals/backtests as soon as candles were stored. Fixed by
+   returning store reads in ascending order from `MarketsService`; the new
+   `'returns candles from a fresh store in chronological order'` unit test locks the contract.
+
+6. **BullMQ custom jobId with `:`** — **FIXED 2026-09-15**: `bot-scheduler.ts` enqueued with
+   `jobId: \`${run.id}:${action}\``, which BullMQ rejects (`Custom Id cannot contain :`), so any bot
+start tick failed in production. Changed to `${runId}-${action}`. Surfaced by the new bot-cycle
+   E2E test.
+
+7. **`decimalTransformer.from` stringified NULL** — **FIXED 2026-09-15**: `from: (value) =>
+String(value)` turned `NULL` money columns into the string `"null"`, so a bot without a
+   take-profit crashed in `buildCycleIntent` with `[DecimalError] Invalid argument: null` (`one.plus("null")`).
+   Fixed the transformer to return `null` for null/undefined input (protects every nullable
+   money column across bots/paper/backtests) and hardened `buildCycleIntent` to treat `undefined`
+   like `null`. New unit tests cover both. Surfaced by the bot-cycle E2E test.
+
+8. **Circuit-breaker state is in-memory (MVP)** — **FIXED 2026-09-15**: trip/reset state now
+   persists to the `circuit_breakers` table (migration 9) and the registry is hydrated at boot, so
+   a restart never auto-closes an OPEN breaker. `assertTradingAllowed` persists each trip;
+   `reset` deletes the row (AGENTS.md §19).
+
+9. **Single configured broker account (MVP)** — **KNOWN, 2026-09-15**: Bybit credentials are
+   process-global env, so every live account maps to the same broker account. The position
+   reconciliation compares each live account's local ledger against that one broker view; a user
+   running several Bolt accounts against one Bybit account will see cross-account divergences
+   until per-account broker accounts are supported. Detection-only, so no wrong numbers are ever
+   written (AGENTS.md §17).
+
+---
+
+## Current Architecture
+
+```text
+Frontend (Next.js 16)
+    ↓ HTTP/WebSocket
+NestJS API (apps/api, port 4000)
+    ↓
+  ┌──────────────────────────────────────────────┐
+  │ Auth  Users  Sessions  Markets  Strategies   │
+  │ Backtests  PaperTrading  Bots  Health         │
+  └──────────────────────────────────────────────┘
+    ↓
+  ┌──────────────────────────────────────────────┐
+  │ @trading-bolt/shared                         │
+  │ @trading-bolt/indicators                     │
+  │ @trading-bolt/trading-engine                 │
+  │ @trading-bolt/risk-engine                    │
+  │ @trading-bolt/backtesting                    │
+  │ @trading-bolt/broker-adapters (PaperBroker)  │
+  └──────────────────────────────────────────────┘
+    ↓
+PostgreSQL (TypeORM, manual migrations via tsx)
+    ↓
+Redis (ioredis, BullMQ for bot-execution queue)
+    ↓
+BullMQ (BotExecutionProcessor)
+```
+
+---
+
+## Current Database Migrations
+
+| Migration       | Name                      | Purpose                                                                          |
+| --------------- | ------------------------- | -------------------------------------------------------------------------------- |
+| `1700000000000` | `CreateAppMeta`           | Application metadata table                                                       |
+| `1700000000001` | `CreateUsers`             | Users table                                                                      |
+| `1700000000002` | `CreateSessions`          | Sessions table (JWT refresh tokens)                                              |
+| `1700000000003` | `CreateMarketCandles`     | Market candle storage                                                            |
+| `1700000000004` | `CreateBacktests`         | Backtest + BacktestTrade + BacktestEquityPoint                                   |
+| `1700000000005` | `CreatePaperTrading`      | Paper accounts, orders, positions, portfolio snapshots                           |
+| `1700000000006` | `CreateBots`              | Bots + bot_runs tables                                                           |
+| `1700000000007` | `CreateBotRunCycles`      | Per-cycle signal/order history for bot runs (idx run_id, run+seq)                |
+| `1700000000008` | `AddBrokerReconciliation` | `provider`/`broker_status`/`last_synced_at` on `paper_orders` for reconciliation |
+| `1700000000009` | `AddCircuitBreakers`      | Persistent `circuit_breakers` table (severity PK, reason, tripped_at)            |
+| —               | Applied live              | All 9 migrations applied against Docker PostgreSQL on 2026-09-15                 |
+
+---
+
+## Current API Endpoints
+
+| Method | Path                                  | Auth | Purpose                              |
+| ------ | ------------------------------------- | ---- | ------------------------------------ |
+| GET    | `/api/health`                         | No   | Liveness check                       |
+| GET    | `/api/ready`                          | No   | Readiness check (DB/Redis)           |
+| POST   | `/api/auth/register`                  | No   | User registration                    |
+| POST   | `/api/auth/login`                     | No   | User login                           |
+| POST   | `/api/auth/logout`                    | Yes  | Logout (revoke refresh)              |
+| GET    | `/api/auth/me`                        | Yes  | Current user                         |
+| GET    | `/api/markets/symbols`                | Yes  | Supported symbols                    |
+| GET    | `/api/markets/:symbol/candles`        | Yes  | Candle history                       |
+| GET    | `/api/markets/:symbol/ticker`         | Yes  | Latest ticker                        |
+| GET    | `/api/strategies`                     | Yes  | List registered strategies           |
+| POST   | `/api/strategies/evaluate`            | Yes  | Evaluate strategy on candles         |
+| POST   | `/api/backtests`                      | Yes  | Run + store backtest                 |
+| GET    | `/api/backtests`                      | Yes  | List stored backtests                |
+| GET    | `/api/backtests/:id`                  | Yes  | Backtest detail                      |
+| POST   | `/api/paper/accounts`                 | Yes  | Create paper account                 |
+| GET    | `/api/paper/accounts`                 | Yes  | List paper accounts                  |
+| POST   | `/api/paper/accounts/:id/orders`      | Yes  | Place paper order                    |
+| GET    | `/api/paper/accounts/:id/orders`      | Yes  | List orders                          |
+| GET    | `/api/paper/accounts/:id/positions`   | Yes  | List positions                       |
+| GET    | `/api/paper/accounts/:id/portfolio`   | Yes  | Portfolio summary                    |
+| POST   | `/api/bots`                           | Yes  | Create bot                           |
+| GET    | `/api/bots`                           | Yes  | List user's bots                     |
+| GET    | `/api/bots/:botId`                    | Yes  | Get bot detail                       |
+| GET    | `/api/bots/:botId/monitor`            | Yes  | Monitor bot + portfolio + position   |
+| GET    | `/api/bots/:botId/runs`               | Yes  | List bot runs                        |
+| GET    | `/api/bots/:botId/runs/:runId/cycles` | Yes  | List cycles for a bot run            |
+| POST   | `/api/bots/:botId/start`              | Yes  | Start bot                            |
+| POST   | `/api/bots/:botId/pause`              | Yes  | Pause bot                            |
+| POST   | `/api/bots/:botId/resume`             | Yes  | Resume bot                           |
+| POST   | `/api/bots/:botId/stop`               | Yes  | Stop bot                             |
+| POST   | `/api/bots/:botId/emergency-stop`     | Yes  | Emergency stop (flatten live + stop) |
+| POST   | `/api/bots/:botId/recover`            | Yes  | Recover bot from ERROR               |
+| GET    | `/api/brokers`                        | Yes  | List executors (no credentials)      |
+| GET    | `/api/brokers/account`                | Yes  | Live broker account monitor view     |
+| POST   | `/api/brokers/orders/:orderId/cancel` | Yes  | Cancel a live order                  |
+
+---
+
+## Current Frontend Pages
+
+| Route             | Page                   | Status                                                             |
+| ----------------- | ---------------------- | ------------------------------------------------------------------ |
+| `/`               | Landing / redirect     | Static                                                             |
+| `/login`          | Login                  | Functional                                                         |
+| `/register`       | Register               | Functional                                                         |
+| `/dashboard`      | Dashboard (auth-gated) | Placeholder                                                        |
+| `/markets`        | Markets (charts)       | Functional                                                         |
+| `/backtests`      | Backtest runner        | Functional                                                         |
+| `/backtests/[id]` | Backtest detail        | Functional                                                         |
+| `/bots`           | Functional             | Create + lifecycle + monitor + cycle history + live emergency stop |
+| `/live-broker`    | Functional             | Live broker monitor + cancel open orders (polls every 5s)          |
+| `/bots/[id]`      | Not implemented        | Detailed single-bot view (optional)                                |
+
+---
+
+## Bybit State
+
+**In progress (increments 1–7 done).** `BybitAdapter` in `@trading-bolt/broker-adapters`, env-backed
+`BrokersModule`/`GET /api/brokers`, the `order-reconciliation` engine (service + queue + processor +
+periodic sweep), the risk-gated live execution path (`LiveTradingService`) with the circuit-breaker
+layer (persistent via migration 9, hydrated at boot), live order cancellation, per-bot emergency
+stop (kill-switch flatten, reduce-only, never blocked by breakers), the live broker account monitor
+(`GET /api/brokers/account`), local-vs-broker position reconciliation (read-only, divergence
+logging), and the frontend live-broker monitor + order/emergency-stop controls (`/live-broker`,
+`/bots`) are all in place and unit-tested against mocks. Live bot creation requires matching
+credentials+environment, and DEMO/TESTNET/LIVE bots route through risk checks before any adapter call.
+**Remaining:** real demo/testnet smoke test (needs credentials), an execution-mode selector in the
+bot creation form (backend gate exists; PAPER-only UI today), re-evaluation of the
+single-broker-account model (Known Problem #9).
+
+---
+
+## Last Completed Task
+
+1. **Phase 8 — Increment 7: frontend live broker monitor + order controls (2026-09-15)** — added the
+   `/live-broker` page (JWT-gated, 5s polling of `GET /api/brokers/account`): environment badge,
+   overview gems (equity/free/open counts), open circuit breakers, balances, positions and open
+   orders, with a fail-closed "not configured" empty state and per-surface broker warnings instead
+   of a blank page. Open orders now carry a `localId` (`LiveOrderView`, enriched in
+   `getAccountView` via `PaperOrderRepository.findLiveByBrokerOrderIds`) so orders placed by Trading
+   Bolt expose a Cancel button that calls the ownership-checked
+   `POST /api/brokers/orders/:orderId/cancel`; orders external to Bolt show "external" and are never
+   cancelable from here. Added a red emergency-stop button in the `/bots` list for live-capable bots
+   (executionMode ≠ PAPER, RUNNING/PAUSED/STARTING/STOPPING, confirm dialog →
+   `POST /api/bots/:botId/emergency-stop`). New typed web client `lib/brokers.ts`
+   (`getAccountView`, `cancelLiveOrder`), `lib/bots.ts` `emergencyStopBot`, dashboard + `/bots`
+   navigation links. New test: getAccountView local-id enrichment (1) — api **252 unit tests**
+   (476 total); e2e **15**; web build passes with the new route.
+2. **Phase 8 — Increment 6: live account monitor + position reconciliation (2026-09-15)** — added
+   `GET /api/brokers/account` (`LiveAccountController` + `LiveTradingService.getAccountView`): a
+   JWT-guarded read-only view of the configured broker (wallet balances + summed equity/free, broker
+   positions + open orders, open circuit breakers, per-surface warnings; never credentials; fails
+   closed to `configured:false` with no adapter). Added `PositionReconciliationService` (AGENTS.md
+   §17): computes each live account's expected net from the signed-fill ledger identity
+   (`PaperOrderRepository.listLiveAccounts`), compares against `adapter.getPositions()`, and logs
+   `POSITION_DIVERGENCE` — read-only, never auto-corrects. Wired into `ReconciliationProcessor`, which
+   now returns `ReconciliationRunOutcome` (order + position passes per job). New tests:
+   position-reconciliation (10), getAccountView (4) — api **251 unit tests** (475 total); e2e **15**
+   (+`GET /api/brokers/account` 200 fail-closed + 401).
+3. **Phase 8 — Increment 5: live order management + emergency controls (2026-09-15)** — added
+   `POST /api/brokers/orders/:orderId/cancel` (`LiveOrdersController` + `LiveTradingService.cancelOrder`,
+   server-side ownership, only `provider='bybit'`, idempotent, status converges via reconciliation) and
+   `POST /api/bots/:botId/emergency-stop` (`BotsService.emergencyStop` → `LiveTradingService.emergencyFlatten`:
+   cancels open live orders on the symbol and flattens the broker-held position with reduce-only market
+   orders; the bot always stops even when flattening fails). Made the circuit breaker persistent —
+   migration 9 `circuit_breakers` + `CircuitBreakerRepository` (TypeORM) + hydration at boot, so a
+   restart never auto-closes an OPEN breaker. `LiveTradingModule` gains `UsersModule` (for the JWT guard)
+   and exports `PaperAccountRepository` from `PaperTradingModule`. New tests: breaker persistence/
+   hydration, cancel (6), emergency flatten (3), bots emergency-stop (3) — api now 237 unit tests
+   (461 total); e2e now 13 (cancel + emergency-stop 401).
+4. **Phase 8 — Increment 4: live bot routing + circuit breaker (2026-09-15)** — added the
+   `live-trading` module (`LiveTradingService`, `CircuitBreakerService`, `LiveAccountRiskTracker`)
+   and wired risk-gated routing into `BotRunnerService` by `ExecutionMode`. Every live order passes
+   `evaluateOrder` + the breaker before reaching the adapter, is persisted as `provider='bybit'`
+   `SUBMITTED`, and enqueues reconciliation. Daily-loss/drawdown breaches trip account+bot breakers
+   (`CircuitBreakerOpenError` → bot ERROR, no auto-resume); reduce-only exits never block. Bot
+   creation gate now requires a configured broker AND a mode↔environment match. Extracted
+   `ReconciliationProducer` (shared by scheduler + live placement). 27 new unit tests (breaker 9,
+   live-trading 10, bots gate 5, runner routing 3); api now 223 unit tests; 447 total + 11 e2e.
+5. **Phase 8 — Increment 3: order reconciliation engine (2026-09-15)** — added
+   `OrderReconciliationService` (reads pending `provider='bybit'` non-terminal orders, probes the
+   broker with `getOrder`, copies fills verbatim, fails orders missing at the broker, logs
+   terminal/open or identity divergences without overwriting), a `order-reconciliation` BullMQ
+   processor + 30s periodic scheduler (live-only), scoped sweeps, and a `listPendingLive`
+   repository query. `ReconciliationJob`/`ReconciliationOutcome` types added to the shared package.
+   9 unit tests; no live routing yet at the time.
+6. **Phase 8 — Increment 2: API brokers module + env-backed registry (2026-09-15)** — added
+   `BrokersModule`/`BrokersService` (registry over `PaperBroker` + `BybitAdapter`, lazy adapter
+   construction, no credentials ever exposed) and JWT-guarded `GET /api/brokers`. Env validation
+   hardens `BYBIT_*`: `BYBIT_ENVIRONMENT` enum (`demo|testnet|mainnet`, default `demo`) and a
+   super-refined key/secret pair rule (partial pairs refuse boot). Migration 8
+   (`AddBrokerReconciliation`, applied) adds `provider`/`broker_status`/`last_synced_at` to
+   `paper_orders` as reconciliation groundwork. 13 new unit tests (env.validation 7, brokers.service 6) + 2 e2e tests.
+7. **Phase 8 — Increment 1: `BybitAdapter` (2026-09-15)** — built the Bybit v5 adapter in
+   `@trading-bolt/broker-adapters` behind the existing `BrokerAdapter` abstraction: signed REST
+   client (HMAC-SHA256, injectable `FetchLike` transport, no runtime deps added), order
+   place/cancel/get/list, positions and unified wallet mapping, strict order-status mapping with
+   loud failure on unknown statuses, quantity/price normalization from per-symbol instrument
+   filters, `orderLinkId` = `clientOrderId` idempotency, honest `SUBMITTED` status on created
+   market orders (fills converge via getOrder/reconciliation). Fail-closed constructor:
+   `apiKey`/`apiSecret` required, `environment` defaults to `demo`. 38 new unit tests (adapter 14,
+   mappers 24); broker-adapters package now 73. Real smoke test deferred until demo credentials
+   arrive (mock-only for now).
+8. **Persisted per-cycle signals/orders + bot-cycle E2E (2026-09-15)** — added `bot_run_cycles`
+   (entity, migration 7, repository), wired the bot runner to persist one record per tick
+   (signal, order, rejection, or error; success and failure paths), exposed
+   `GET /api/bots/:botId/runs/:runId/cycles` with ownership enforcement, surfaced cycles in the
+   `/bots` monitor panel, added 4 runner persistence tests + 1 ordering test + 1 transformer test +
+   1 bot-cycle TP regression test, and wrote an end-to-end test that drives a real bot + BullMQ
+   worker through the HTTP API against live Postgres/Redis with a deterministic stub market data
+   provider (buys the annotated cross on the last bar). **9/9 E2E tests and 371 unit tests pass.**
+9. **Fixed three latent defects surfaced by the new E2E** — (a) `MarketsService.getCandles`
+   returned newest-first rows to strategies/backtests/charts (cache path), fixed to chronological;
+   (b) BullMQ `jobId` contained `:`, which BullMQ forbids — any bot start tick would fail;
+   (c) `decimalTransformer.from` turned `NULL` money columns into the string `"null"`, crashing
+   bots without take-profit with `[DecimalError] Invalid argument: null`. All three are now unit- and
+   E2E-covered. Migration `1700000000007` applied to the live database.
+10. **JWT-guarded the backtests API (2026-09-15)** — closed the auth inconsistency flagged in
+    Known Problems #3 (see above).
+
+---
+
+## Verification Results (2026-09-15)
+
+```text
+pnpm format:check  ✅  All matched files use Prettier code style
+pnpm lint          ✅  0 warnings, 0 errors
+pnpm typecheck     ✅  All 9 workspaces pass
+pnpm test          ✅  476 tests across 6 packages/apps (all pass)
+pnpm test:e2e      ✅  15 tests pass (Docker Postgres + Redis running)
+pnpm db:migrate    ✅  All 9 migrations applied to live PostgreSQL
+GET /api/health    ✅  status ok (live boot, start:prod)
+GET /api/ready     ✅  database:ok, redis:ok, queue:ok (live boot)
+```
+
+---
+
+## Recommended Next Task
+
+**Phase 8 — Increment 8: bot creation execution-mode selector + hi-lo live bot smoke hardening.**
+
+1. Web: add an execution-mode selector (PAPER / DEMO / TESTNET / LIVE) to the bot creation form with
+   server-side rule hints (a live-capable mode requires a fully configured broker and a
+   mode↔environment match); surface the bot's mode clearly in the `/bots` list beside the existing
+   paper-account binding. The backend gate already exists and stays authoritative (AGENTS.md §11/§23).
+2. Real demo/testnet smoke test once the user provides demo credentials — now that create/order/
+   cancel/emergency-stop/fill-convergence/account-monitor/position-reconciliation and the monitor UI
+   are all wired, one real demo run closes the loop and validates the broker adapter un-mocked for
+   the first time ("honest values, never guesses").
+3. Re-examine the single-broker-account model (Known Problem #9) as a separate design task.
+
+---
+
+## Blockers
+
+None blocking. Docker, PostgreSQL and Redis are now available locally. Migrations, E2E tests and
+live `/api/health` + `/api/ready` checks all pass against live infrastructure.

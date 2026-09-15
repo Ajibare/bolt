@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MarketsModule } from '../markets/markets.module.js';
+import { UsersModule } from '../users/users.module.js';
 import { BacktestRepository } from './backtest.repository.js';
 import { BacktestsController } from './backtests.controller.js';
 import { BacktestsService } from './backtests.service.js';
@@ -19,6 +20,7 @@ import { TypeOrmBacktestRepository } from './typeorm-backtest.repository.js';
       BacktestEquityPointEntity,
     ]),
     MarketsModule,
+    UsersModule,
   ],
   controllers: [BacktestsController],
   providers: [

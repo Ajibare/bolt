@@ -25,7 +25,7 @@ export interface CycleOrderIntent {
 export interface CycleParameters {
   quantity: string;
   stopLossPercent: string;
-  takeProfitPercent: string | null;
+  takeProfitPercent: string | null | undefined;
 }
 
 export function buildCycleIntent(
@@ -48,7 +48,7 @@ export function buildCycleIntent(
       reduceOnly: false,
       stopLoss: stop.toString(),
     };
-    if (params.takeProfitPercent !== null) {
+    if (params.takeProfitPercent != null) {
       intent.takeProfit = price
         .times(one.plus(params.takeProfitPercent))
         .toString();

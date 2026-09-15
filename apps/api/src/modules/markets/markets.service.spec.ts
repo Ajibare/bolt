@@ -171,6 +171,25 @@ describe('MarketsService', () => {
     expect(repository.findLatest).toHaveBeenCalledTimes(1);
   });
 
+  it('returns candles from a fresh store in chronological order', async () => {
+    const older = entity({ timestamp: Date.now() - 2 * HOUR_MS });
+    const newer = entity({ timestamp: Date.now() - HOUR_MS });
+    const repository = createRepository({
+      findLatest: vi.fn().mockResolvedValue([newer, older]),
+    });
+    const service = createService(
+      { getSymbols: () => ['BTCUSDT'] },
+      repository,
+    );
+
+    const result = await service.getCandles('BTCUSDT', '1h');
+
+    expect(result.map((c) => c.timestamp)).toEqual([
+      older.timestamp,
+      newer.timestamp,
+    ]);
+  });
+
   it('refreshes from the provider and persists when the store is stale', async () => {
     const stale = entity({ timestamp: Date.now() - 3 * HOUR_MS });
     const persisted = [entity({ timestamp: Date.now() - HOUR_MS })];

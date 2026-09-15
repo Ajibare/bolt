@@ -49,7 +49,9 @@ export class MarketsService {
       latest &&
       isCandleDataFresh(latest.timestamp, resolvedInterval, Date.now())
     ) {
-      return stored.map(entityToCandle);
+      // findLatest is newest-first; consumers (strategies, backtests, charts)
+      // require chronological (oldest-first) order.
+      return stored.slice().reverse().map(entityToCandle);
     }
 
     const fetched = await this.provider.getCandles(resolvedSymbol, {
@@ -69,7 +71,7 @@ export class MarketsService {
       resolvedLimit,
     );
     if (persisted.length > 0) {
-      return persisted.map(entityToCandle);
+      return persisted.slice().reverse().map(entityToCandle);
     }
     return fetched;
   }

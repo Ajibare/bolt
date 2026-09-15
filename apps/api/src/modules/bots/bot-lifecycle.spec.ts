@@ -32,12 +32,8 @@ describe('bot lifecycle transitions', () => {
   });
 
   it('throws ConflictException on illegal transition', () => {
-    expect(() => transition('ERROR', 'STARTING')).toThrow(
-      ConflictException,
-    );
-    expect(() => transition('RUNNING', 'STARTING')).toThrow(
-      ConflictException,
-    );
+    expect(() => transition('ERROR', 'STARTING')).toThrow(ConflictException);
+    expect(() => transition('RUNNING', 'STARTING')).toThrow(ConflictException);
   });
 
   it('returns the destination for legal transitions', () => {

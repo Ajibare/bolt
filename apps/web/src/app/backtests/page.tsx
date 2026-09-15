@@ -9,7 +9,8 @@ import {
 } from "@trading-bolt/shared";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { useAuth } from "@/components/auth-provider";
 import {
   createBacktest,
   listBacktests,
@@ -71,6 +72,7 @@ const inputClass =
   "rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
 
 export default function BacktestsPage() {
+  const { user, loading } = useAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -89,6 +91,12 @@ export default function BacktestsPage() {
   const [slippageRate, setSlippageRate] = useState("0");
   const [riskFreeRate, setRiskFreeRate] = useState("0");
   const [limit, setLimit] = useState(100);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/login");
+    }
+  }, [loading, user, router]);
 
   const strategiesQuery = useQuery({
     queryKey: ["strategies"],

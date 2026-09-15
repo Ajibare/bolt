@@ -50,7 +50,12 @@ export class BotEntity {
   @Column({ name: 'paper_account_id', type: 'uuid' })
   paperAccountId: string;
 
-  @Column({ name: 'execution_mode', type: 'varchar', length: 8, default: 'PAPER' })
+  @Column({
+    name: 'execution_mode',
+    type: 'varchar',
+    length: 8,
+    default: 'PAPER',
+  })
   executionMode: BotExecutionMode;
 
   @Column({ name: 'status', type: 'varchar', length: 16, default: 'DRAFT' })
@@ -104,10 +109,20 @@ export class BotEntity {
   @Column({ name: 'last_order_id', type: 'uuid', nullable: true })
   lastOrderId: string | null;
 
-  @Column({ name: 'last_order_status', type: 'varchar', length: 32, nullable: true })
+  @Column({
+    name: 'last_order_status',
+    type: 'varchar',
+    length: 32,
+    nullable: true,
+  })
   lastOrderStatus: string | null;
 
-  @Column({ name: 'last_order_symbol', type: 'varchar', length: 32, nullable: true })
+  @Column({
+    name: 'last_order_symbol',
+    type: 'varchar',
+    length: 32,
+    nullable: true,
+  })
   lastOrderSymbol: string | null;
 
   /** Persistent error detail; null when the bot is healthy. */
@@ -184,4 +199,70 @@ export class BotRunEntity {
     default: () => 'now()',
   })
   updatedAt: Date;
+}
+
+/**
+ * Immutable per-cycle execution record for one bot run (AGENTS.md §13): which
+ * signal the strategy produced, whether the risk engine accepted the resulting
+ * order or rejected it, and any failure detail. This is the audit trail behind
+ * the `bot_runs` counters (`cycles_run`, `orders_placed`, `orders_rejected`).
+ */
+@Entity('bot_run_cycles')
+@Index('idx_bot_run_cycles_run_seq', ['runId', 'seq'])
+export class BotRunCycleEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ name: 'run_id', type: 'uuid' })
+  runId: string;
+
+  /** 1-based cycle sequence within the run. */
+  @Column({ type: 'int' })
+  seq: number;
+
+  @Column({
+    name: 'signal_direction',
+    type: 'varchar',
+    length: 8,
+    nullable: true,
+  })
+  signalDirection: 'buy' | 'sell' | 'hold' | null;
+
+  @Column({ name: 'signal_reason', type: 'text', nullable: true })
+  signalReason: string | null;
+
+  @Column({ name: 'signal_at', type: 'timestamptz', nullable: true })
+  signalAt: Date | null;
+
+  @Column({ name: 'order_id', type: 'uuid', nullable: true })
+  orderId: string | null;
+
+  @Column({
+    name: 'order_status',
+    type: 'varchar',
+    length: 32,
+    nullable: true,
+  })
+  orderStatus: string | null;
+
+  @Column({ name: 'order_side', type: 'varchar', length: 8, nullable: true })
+  orderSide: string | null;
+
+  @Column({ name: 'order_symbol', type: 'varchar', length: 32, nullable: true })
+  orderSymbol: string | null;
+
+  /** Set when the risk engine rejected the order (AGENTS.md §10). */
+  @Column({ name: 'rejection_reason', type: 'text', nullable: true })
+  rejectionReason: string | null;
+
+  /** Set when the cycle failed unexpectedly (bot flips to ERROR). */
+  @Column({ name: 'error', type: 'text', nullable: true })
+  error: string | null;
+
+  @CreateDateColumn({
+    name: 'created_at',
+    type: 'timestamptz',
+    default: () => 'now()',
+  })
+  createdAt: Date;
 }

@@ -60,6 +60,15 @@ export class BotsController {
     return this.botsService.listRuns(user.id, botId);
   }
 
+  @Get(':botId/runs/:runId/cycles')
+  cycles(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('botId', new ParseUUIDPipe({ version: '4' })) botId: string,
+    @Param('runId', new ParseUUIDPipe({ version: '4' })) runId: string,
+  ) {
+    return this.botsService.listRunCycles(user.id, botId, runId);
+  }
+
   @Post(':botId/start')
   start(
     @CurrentUser() user: AuthenticatedUser,
@@ -93,6 +102,15 @@ export class BotsController {
     @Param('botId', new ParseUUIDPipe({ version: '4' })) botId: string,
   ) {
     return this.botsService.stop(user.id, botId);
+  }
+
+  @Post(':botId/emergency-stop')
+  @HttpCode(HttpStatus.OK)
+  emergencyStop(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('botId', new ParseUUIDPipe({ version: '4' })) botId: string,
+  ) {
+    return this.botsService.emergencyStop(user.id, botId);
   }
 
   @Post(':botId/recover')

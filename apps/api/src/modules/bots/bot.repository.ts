@@ -1,5 +1,6 @@
 import type {
   BotEntity,
+  BotRunCycleEntity,
   BotRunEntity,
 } from './entities/bot.entity.js';
 
@@ -35,4 +36,14 @@ export abstract class BotRunRepository {
     botId: string,
     options?: { limit?: number },
   ): Promise<BotRunEntity[]>;
+}
+
+/** Immutable per-cycle execution history (AGENTS.md §13). */
+export abstract class BotRunCycleRepository {
+  abstract save(cycle: BotRunCycleEntity): Promise<BotRunCycleEntity>;
+
+  abstract listByRunId(
+    runId: string,
+    options?: { limit?: number },
+  ): Promise<BotRunCycleEntity[]>;
 }

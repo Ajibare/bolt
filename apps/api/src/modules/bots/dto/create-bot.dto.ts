@@ -18,9 +18,10 @@ import { DECIMAL_STRING_PATTERN } from '../../backtests/dto/run-backtest.dto.js'
 /**
  * Create a bot draft (status DRAFT). The service layer re-validates the
  * strategy config against its registry schema and the risk policy with the
- * risk engine before anything is persisted (AGENTS.md §18/§23). Only PAPER
- * execution is available in the MVP — DEMO/TESTNET/LIVE need live credentials
- * (AGENTS.md §11-12) and are rejected by the service.
+ * risk engine before anything is persisted (AGENTS.md §18/§23). Execution
+ * mode is enforced server-side: PAPER is always allowed; BACKTEST is not a
+ * bot mode; DEMO/TESTNET/LIVE require a configured live broker whose
+ * environment matches the mode (fail-closed, AGENTS.md §11-12).
  */
 export class CreateBotDto {
   @IsString()

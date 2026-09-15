@@ -8,13 +8,13 @@
  */
 
 export const BOT_STATUSES = [
-  'DRAFT',
-  'STOPPED',
-  'STARTING',
-  'RUNNING',
-  'PAUSED',
-  'STOPPING',
-  'ERROR',
+  "DRAFT",
+  "STOPPED",
+  "STARTING",
+  "RUNNING",
+  "PAUSED",
+  "STOPPING",
+  "ERROR",
 ] as const;
 
 export type BotStatus = (typeof BOT_STATUSES)[number];
@@ -27,13 +27,7 @@ export function isBotStatus(value: string): value is BotStatus {
  * Execution modes are explicit and mutually exclusive (AGENTS.md §11): a
  * paper bot must never accidentally use live credentials.
  */
-export const BOT_EXECUTION_MODES = [
-  'BACKTEST',
-  'PAPER',
-  'DEMO',
-  'TESTNET',
-  'LIVE',
-] as const;
+export const BOT_EXECUTION_MODES = ["BACKTEST", "PAPER", "DEMO", "TESTNET", "LIVE"] as const;
 
 export type BotExecutionMode = (typeof BOT_EXECUTION_MODES)[number];
 
@@ -41,7 +35,7 @@ export function isBotExecutionMode(value: string): value is BotExecutionMode {
   return (BOT_EXECUTION_MODES as readonly string[]).includes(value);
 }
 
-export type BotTickAction = 'start' | 'cycle';
+export type BotTickAction = "start" | "cycle";
 
 /**
  * Job payload for the `bot-execution` BullMQ queue, produced by the API and

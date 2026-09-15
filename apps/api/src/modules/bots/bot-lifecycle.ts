@@ -1,7 +1,5 @@
 import type { BotStatus } from '@trading-bolt/shared';
-import {
-  ConflictException,
-} from '@nestjs/common';
+import { ConflictException } from '@nestjs/common';
 
 /**
  * Bot lifecycle (roadmap §Bot Lifecycle). State transitions are explicit and
@@ -47,11 +45,7 @@ export function canStart(status: BotStatus): boolean {
 
 /** Statuses from which a bot may be stopped with stop(). */
 export function canStop(status: BotStatus): boolean {
-  return (
-    status === 'STARTING' ||
-    status === 'RUNNING' ||
-    status === 'PAUSED'
-  );
+  return status === 'STARTING' || status === 'RUNNING' || status === 'PAUSED';
 }
 
 /**

@@ -15,6 +15,7 @@ import {
   evaluateOrder,
   type OrderProposal,
   type RiskAccountState,
+  type RiskConfig,
 } from '@trading-bolt/risk-engine';
 import { MarketsService } from '../markets/markets.service.js';
 import { CreatePaperAccountDto } from './dto/create-paper-account.dto.js';
@@ -77,11 +78,16 @@ export class PaperTradingService {
    * Risk-gated order placement. Returns the persisted order — either a fresh
    * execution or, when the same `clientOrderId` was already seen, the original
    * order (idempotency, AGENTS.md §16).
+   *
+   * `riskConfig` is an optional server-side policy override (AGENTS.md §18):
+   * only trusted callers such as the bot runner supply it; it is never derived
+   * from frontend input. Defaults to `DEFAULT_RISK_CONFIG` when omitted.
    */
   async placeOrder(
     userId: string,
     accountId: string,
     dto: PlacePaperOrderDto,
+    riskConfig?: Partial<RiskConfig> | null,
   ): Promise<PaperOrderEntity> {
     const account = await this.ownedAccount(userId, accountId);
     if (account.status !== 'ACTIVE') {
@@ -118,7 +124,7 @@ export class PaperTradingService {
     const decision = evaluateOrder({
       proposal,
       account: this.buildRiskAccount(account, positions, oracle),
-      config: DEFAULT_RISK_CONFIG,
+      config: riskConfig ?? DEFAULT_RISK_CONFIG,
     });
     if (!decision.approved) {
       throw new BadRequestException(

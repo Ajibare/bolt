@@ -8,12 +8,15 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  UseGuards,
 } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { BacktestsService } from './backtests.service.js';
 import { RunBacktestDto } from './dto/run-backtest.dto.js';
 import { BacktestEntity } from './entities/backtest.entity.js';
 
 @Controller('backtests')
+@UseGuards(JwtAuthGuard)
 export class BacktestsController {
   constructor(private readonly backtestsService: BacktestsService) {}
 

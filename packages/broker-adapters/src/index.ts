@@ -5,3 +5,7 @@ export * from "./paper/order-lifecycle.js";
 export * from "./paper/paper-math.js";
 export * from "./paper/paper-broker.js";
 export * from "./paper/types.js";
+export * from "./bybit/bybit-adapter.js";
+export * from "./bybit/http-client.js";
+export * from "./bybit/mappers.js";
+export * from "./bybit/types.js";

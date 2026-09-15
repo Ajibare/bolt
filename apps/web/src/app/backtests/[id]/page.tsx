@@ -2,8 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { use } from "react";
+import { notFound, useRouter } from "next/navigation";
+import { useEffect, use } from "react";
+import { useAuth } from "@/components/auth-provider";
 import { EquityChart } from "@/components/equity-chart";
 import { getBacktest } from "@/lib/backtests";
 
@@ -25,6 +26,14 @@ function telemetryPoint(timestamp: string | number): string {
 
 export default function BacktestDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/login");
+    }
+  }, [loading, user, router]);
 
   const { data, error, isPending } = useQuery({
     queryKey: ["backtests", id],

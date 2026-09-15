@@ -42,6 +42,26 @@ export abstract class PaperOrderRepository {
     accountId: string,
     options?: { status?: PaperOrderStatus; limit?: number },
   ): Promise<PaperOrderEntity[]>;
+
+  /**
+   * Pending (non-terminal) orders placed through a live broker provider,
+   * used by order reconciliation (AGENTS.md §17).
+   */
+  abstract listPendingLive(accountId?: string): Promise<PaperOrderEntity[]>;
+
+  /**
+   * Distinct accounts that have at least one live-provider order, used by
+   * position reconciliation to scope the local-vs-broker ledger compare.
+   */
+  abstract listLiveAccounts(): Promise<string[]>;
+
+  /**
+   * Live-provider orders whose broker id is in the given set, used to attach
+   * the local order id to broker open orders in the account monitor.
+   */
+  abstract findLiveByBrokerOrderIds(
+    brokerOrderIds: string[],
+  ): Promise<PaperOrderEntity[]>;
 }
 
 export abstract class PaperPositionRepository {

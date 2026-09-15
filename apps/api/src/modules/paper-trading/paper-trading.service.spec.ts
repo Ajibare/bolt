@@ -199,6 +199,24 @@ describe('PaperTradingService', () => {
       expect(ctx.ordersRepo.save).not.toHaveBeenCalled();
     });
 
+    it('applies a custom risk config when provided', async () => {
+      const ctx = createService();
+      ctx.accountsRepo.findByUserIdAndId.mockResolvedValue(account());
+      await expect(
+        ctx.service.placeOrder('user-1', 'acc-1', buyDto, {
+          maxPositionSize: '0.0001',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(ctx.ordersRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the default risk config when none is provided', async () => {
+      const ctx = createService();
+      ctx.accountsRepo.findByUserIdAndId.mockResolvedValue(account());
+      const saved = await ctx.service.placeOrder('user-1', 'acc-1', buyDto);
+      expect(saved.status).toBe('FILLED');
+    });
+
     it('closes a reduce-only sell and records realized P&L', async () => {
       const ctx = createService();
       ctx.accountsRepo.findByUserIdAndId.mockResolvedValue(
@@ -338,7 +356,7 @@ describe('PaperTradingService', () => {
       ctx.accountsRepo.findByUserIdAndId.mockResolvedValue(account());
       ctx.ordersRepo.listByAccount.mockResolvedValue([
         restingOrder({ id: 'o1', brokerOrderId: 'b1', price: '99' }),
-      ]);
+      ] as never);
       ctx.marketsService.getTicker.mockResolvedValue({
         symbol: 'BTCUSDT',
         lastPrice: '98.5',
@@ -376,7 +394,7 @@ describe('PaperTradingService', () => {
           price: '102',
           reduceOnly: true,
         }),
-      ]);
+      ] as never);
       ctx.marketsService.getTicker.mockResolvedValue({
         symbol: 'BTCUSDT',
         lastPrice: '103',
@@ -402,7 +420,7 @@ describe('PaperTradingService', () => {
       ctx.positionsRepo.listByAccount.mockResolvedValue([]);
       ctx.ordersRepo.listByAccount.mockResolvedValue([
         restingOrder({ id: 'o3', side: 'sell', price: '102' }),
-      ]);
+      ] as never);
       ctx.marketsService.getTicker.mockResolvedValue({
         symbol: 'BTCUSDT',
         lastPrice: '103',
@@ -424,7 +442,7 @@ describe('PaperTradingService', () => {
       );
       ctx.ordersRepo.listByAccount.mockResolvedValue([
         restingOrder({ id: 'o4', price: '500' }),
-      ]);
+      ] as never);
       ctx.marketsService.getTicker.mockResolvedValue({
         symbol: 'BTCUSDT',
         lastPrice: '499',
@@ -444,7 +462,7 @@ describe('PaperTradingService', () => {
       ctx.accountsRepo.findByUserIdAndId.mockResolvedValue(account());
       ctx.ordersRepo.listByAccount.mockResolvedValue([
         restingOrder({ id: 'o5', price: '99' }),
-      ]);
+      ] as never);
       ctx.marketsService.getTicker.mockResolvedValue({
         symbol: 'BTCUSDT',
         lastPrice: '120',

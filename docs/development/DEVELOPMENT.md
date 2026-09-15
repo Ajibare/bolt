@@ -264,8 +264,11 @@ limit?, config }`: candles are loaded through the existing `MarketsService`
   (`paper_accounts`, `paper_orders`, `paper_positions`,
   `paper_portfolio_snapshots`), repository ports + TypeORM impls, and
   `PaperTradingService`:
-  - Every order intent passes `evaluateOrder` with server-enforced
-    `DEFAULT_RISK_CONFIG` before the broker acts (§18) — never client values.
+  - Every order intent passes `evaluateOrder` with a server-side policy before
+    the broker acts (§18) — never client values. `placeOrder(`, `accountId`,
+    `dto`, `riskConfig)` accepts an optional policy for trusted callers (the
+    bot runner passes the bot's stored validated `riskConfig`) and falls back
+    to `DEFAULT_RISK_CONFIG` when omitted.
   - Idempotency: a repeated `clientOrderId` returns the original order.
   - Routes (JWT-protected, ownership checked server-side): `POST/GET
 /paper/accounts`, `POST /paper/accounts/:id/orders`, `GET
@@ -273,6 +276,33 @@ limit?, config }`: candles are loaded through the existing `MarketsService`
 /paper/accounts/:id/portfolio`.
 - Deferred to Phase 7: the continuous strategy loop on a paper account and the
   tick that fills resting limit orders from live candles.
+
+## Bot Engine (Phase 7)
+
+- Lifecycle — `apps/api/src/modules/bots/`:
+  - `bot-lifecycle.ts` — explicit DRAFT/STARTING/RUNNING/PAUSED/STOPPING/
+    STOPPED/ERROR transition map; the only place bot status may change.
+  - `bot-cycle.ts` — pure order-intent derivation from candle signal + held
+    quantity (entry/exit/hold), decimal-backed.
+  - `bot-timing.ts` — interval → delay-milliseconds for re-scheduling.
+  - `bot-scheduler.ts` — BullMQ `bot-execution` queue adapter (add with delay).
+  - `bot-execution.processor.ts` — consumes the queue; `BotRunnerService` runs
+    each tick.
+  - `bot-runner.service.ts` — one tick: settle resting limits → fetch candles →
+    create strategy → evaluate signal → build intent → risk-gated paper order,
+    passing the bot's stored validated `riskConfig` (AGENTS.md §9/§10/§18).
+    Unexpected failures flip the bot to ERROR (no silent continuation).
+  - `bots.service.ts` — CRUD + lifecycle commands; validates strategy config and
+    risk policy server-side; only PAPER execution accepted in the MVP.
+  - Entities `bots` / `bot_runs` (migration `1700000000006-CreateBots.ts`) keep
+    Postgres as the source of truth for status and monitoring counters.
+- Routes (JWT-protected, helper code in `lib/bots.ts`):
+  - `POST /api/bots`, `GET /api/bots`, `GET /api/bots/:botId`,
+    `GET /api/bots/:botId/monitor`, `GET /api/bots/:botId/runs`,
+    `POST /api/bots/:botId/start|pause|resume|stop|recover`.
+- Web: `/bots` — create form (strategy, symbol, interval, paper account,
+  quantity, stop/take-profit %, risk limits) + bot list with status badges,
+  lifecycle buttons, and expandable monitor panels, using `lib/bots.ts`.
 
 ## Scripts
 
@@ -299,7 +329,7 @@ pnpm test
 pnpm build
 ```
 
-Current unit-test counts (2026-09-13): shared 17, indicators 30, trading-engine 47, risk-engine 51, api 142, broker-adapters 35.
+Current unit-test counts (2026-09-15): shared 23, indicators 30, trading-engine 47, risk-engine 51, api 176, broker-adapters 35 = **362 total**.
 
 E2E tests (`pnpm test:e2e`) and `db:migrate`/`db:seed` require a reachable
 PostgreSQL + Redis (Docker Compose or CI).

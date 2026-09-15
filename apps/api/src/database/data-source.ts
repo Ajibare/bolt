@@ -7,6 +7,9 @@ import { CreateMarketCandles1700000000003 } from './migrations/1700000000003-Cre
 import { CreateBacktests1700000000004 } from './migrations/1700000000004-CreateBacktests.js';
 import { CreatePaperTrading1700000000005 } from './migrations/1700000000005-CreatePaperTrading.js';
 import { CreateBots1700000000006 } from './migrations/1700000000006-CreateBots.js';
+import { CreateBotRunCycles1700000000007 } from './migrations/1700000000007-CreateBotRunCycles.js';
+import { AddBrokerReconciliation1700000000008 } from './migrations/1700000000008-AddBrokerReconciliation.js';
+import { AddCircuitBreakers1700000000009 } from './migrations/1700000000009-AddCircuitBreakers.js';
 
 /**
  * DataSource used by CLI-style migration and seed scripts run with tsx.
@@ -28,6 +31,9 @@ export function buildDataSource(
       CreateBacktests1700000000004,
       CreatePaperTrading1700000000005,
       CreateBots1700000000006,
+      CreateBotRunCycles1700000000007,
+      AddBrokerReconciliation1700000000008,
+      AddCircuitBreakers1700000000009,
     ],
     synchronize: false,
     migrationsRun: false,

@@ -34,6 +34,16 @@
 >   orders (market/limit, idempotency), positions, portfolio snapshots; `/paper/*`
 >   endpoints under JWT. Phase 7 bot engine adds the continuous strategy loop and
 >   resting-limit-fill ticks).
+> - **Phase 7 Bot Engine** — implemented & unit-verified in code (2026-09-15);
+>   _not yet fully documented in this roadmap or integration-tested against
+>   Postgres/Redis_. Includes: explicit bot lifecycle state machine, BullMQ
+>   scheduling + execution processor, bot runner cycle
+>   (settle limits → candles → strategy → signal → risk-gated paper order with
+>   the bot's own validated `riskConfig`, AGENTS.md §18), bot/bot_runs entities
+>   - migration, CRUD/lifecycle/monitor API, resting-limit-order settlement,
+>     and the `/bots` create/lifecycle/monitor UI page.
+>     Remaining gaps: no Docker-backed integration tests, bot cycle counters only
+>     (no per-signal persistence yet).
 
 ---
 

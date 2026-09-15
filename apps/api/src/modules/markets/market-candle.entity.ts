@@ -37,7 +37,7 @@ export class MarketCandleEntity {
   @Column({ length: 32 })
   symbol: string;
 
-  @Column({ length: 8 })
+  @Column({ type: 'varchar', length: 8 })
   interval: CandleInterval;
 
   @Column({

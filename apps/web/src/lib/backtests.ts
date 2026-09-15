@@ -1,3 +1,4 @@
+import { authStorage } from "./auth-storage";
 import { apiRequest } from "./api";
 
 export interface StrategySummary {
@@ -71,14 +72,26 @@ export function listStrategies(): Promise<StrategySummary[]> {
   return apiRequest<StrategySummary[]>("/api/strategies");
 }
 
+function authHeader(): { token: string } {
+  const token = authStorage.getAccessToken();
+  if (!token) {
+    throw new Error("Not authenticated");
+  }
+  return { token };
+}
+
 export function listBacktests(): Promise<Backtest[]> {
-  return apiRequest<Backtest[]>("/api/backtests");
+  return apiRequest<Backtest[]>("/api/backtests", authHeader());
 }
 
 export function createBacktest(input: RunBacktestInput): Promise<Backtest> {
-  return apiRequest<Backtest>("/api/backtests", { method: "POST", body: input });
+  return apiRequest<Backtest>("/api/backtests", {
+    ...authHeader(),
+    method: "POST",
+    body: input,
+  });
 }
 
 export function getBacktest(id: string): Promise<Backtest> {
-  return apiRequest<Backtest>(`/api/backtests/${id}`);
+  return apiRequest<Backtest>(`/api/backtests/${id}`, authHeader());
 }

@@ -37,13 +37,7 @@ describe("isBotStatus", () => {
 
 describe("BOT_EXECUTION_MODES", () => {
   it("contains backtest, paper, demo, testnet, live", () => {
-    expect(BOT_EXECUTION_MODES).toEqual([
-      "BACKTEST",
-      "PAPER",
-      "DEMO",
-      "TESTNET",
-      "LIVE",
-    ]);
+    expect(BOT_EXECUTION_MODES).toEqual(["BACKTEST", "PAPER", "DEMO", "TESTNET", "LIVE"]);
   });
 });
 

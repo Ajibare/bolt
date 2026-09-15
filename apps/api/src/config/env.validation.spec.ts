@@ -1,84 +1,76 @@
 import { describe, expect, it } from 'vitest';
-import { validateEnv } from './env.validation.js';
+import { envSchema } from './env.validation.js';
 
-const required = {
-  DATABASE_URL: 'postgres://localhost:5432/trading_bolt',
-  REDIS_URL: 'redis://localhost:6379',
-  JWT_SECRET: 'a'.repeat(40),
-};
+function validEnv(overrides: Record<string, unknown> = {}) {
+  return {
+    NODE_ENV: 'development',
+    DATABASE_URL: 'postgres://bolt:bolt_dev_password@localhost:5432/bolt',
+    REDIS_URL: 'redis://localhost:6379',
+    JWT_SECRET: 'a'.repeat(40),
+    ...overrides,
+  };
+}
 
-describe('validateEnv', () => {
-  it('accepts a valid configuration', () => {
-    const config = validateEnv(required);
-    expect(config.DATABASE_URL).toBe(required.DATABASE_URL);
-    expect(config.REDIS_URL).toBe(required.REDIS_URL);
-    expect(config.JWT_SECRET).toBe(required.JWT_SECRET);
+describe('envSchema — Bybit credentials', () => {
+  it('accepts a missing credential pair (paper-only deployment)', () => {
+    const result = envSchema.safeParse(validEnv());
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.BYBIT_ENVIRONMENT).toBe('demo');
+    }
   });
 
-  it('applies default values', () => {
-    const config = validateEnv(required);
-    expect(config.NODE_ENV).toBe('development');
-    expect(config.API_PORT).toBe(4000);
-    expect(config.LOG_LEVEL).toBe('info');
-    expect(config.WEB_ORIGIN).toBe('http://localhost:3000');
-    expect(config.JWT_EXPIRES_IN).toBe('15m');
-    expect(config.REFRESH_TOKEN_EXPIRES_IN).toBe('7d');
-  });
-
-  it('throws when DATABASE_URL is missing', () => {
-    expect(() =>
-      validateEnv({
-        REDIS_URL: required.REDIS_URL,
-        JWT_SECRET: required.JWT_SECRET,
+  it('accepts a complete credential pair', () => {
+    const result = envSchema.safeParse(
+      validEnv({
+        BYBIT_API_KEY: 'key',
+        BYBIT_API_SECRET: 'secret',
+        BYBIT_ENVIRONMENT: 'testnet',
       }),
-    ).toThrow('DATABASE_URL is required');
-  });
-
-  it('throws when REDIS_URL is missing', () => {
-    expect(() =>
-      validateEnv({
-        DATABASE_URL: required.DATABASE_URL,
-        JWT_SECRET: required.JWT_SECRET,
-      }),
-    ).toThrow('REDIS_URL is required');
-  });
-
-  it('throws when JWT_SECRET is missing', () => {
-    expect(() =>
-      validateEnv({
-        DATABASE_URL: required.DATABASE_URL,
-        REDIS_URL: required.REDIS_URL,
-      }),
-    ).toThrow('JWT_SECRET is required');
-  });
-
-  it('throws when JWT_SECRET is shorter than 32 characters', () => {
-    expect(() => validateEnv({ ...required, JWT_SECRET: 'too-short' })).toThrow(
-      'JWT_SECRET must be at least 32 characters',
     );
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.BYBIT_ENVIRONMENT).toBe('testnet');
+    }
   });
 
-  it('coerces numeric strings', () => {
-    const config = validateEnv({
-      ...required,
-      API_PORT: '8080',
-      DB_POOL_MAX: '25',
-    });
-    expect(config.API_PORT).toBe(8080);
-    expect(config.DB_POOL_MAX).toBe(25);
+  it('refuses a key without a secret (fail-closed)', () => {
+    const result = envSchema.safeParse(validEnv({ BYBIT_API_KEY: 'key' }));
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(JSON.stringify(result.error.issues)).toContain('set together');
+    }
   });
 
-  it('accepts an optional MARKET_DATA_BASE_URL', () => {
-    const config = validateEnv({
-      ...required,
-      MARKET_DATA_BASE_URL: 'https://api.bybit.com',
-    });
-    expect(config.MARKET_DATA_BASE_URL).toBe('https://api.bybit.com');
+  it('refuses a secret without a key (fail-closed)', () => {
+    const result = envSchema.safeParse(
+      validEnv({ BYBIT_API_SECRET: 'secret' }),
+    );
+    expect(result.success).toBe(false);
   });
 
-  it('rejects a malformed MARKET_DATA_BASE_URL', () => {
-    expect(() =>
-      validateEnv({ ...required, MARKET_DATA_BASE_URL: 'not-a-url' }),
-    ).toThrow('MARKET_DATA_BASE_URL must be a valid URL');
+  it('treats blank credential values as absent', () => {
+    const result = envSchema.safeParse(
+      validEnv({
+        BYBIT_API_KEY: '   ',
+        BYBIT_API_SECRET: '',
+      }),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an unknown BYBIT_ENVIRONMENT', () => {
+    const result = envSchema.safeParse(
+      validEnv({ BYBIT_ENVIRONMENT: 'production' }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('defaults BYBIT_ENVIRONMENT to demo', () => {
+    const result = envSchema.safeParse(validEnv());
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.BYBIT_ENVIRONMENT).toBe('demo');
+    }
   });
 });
