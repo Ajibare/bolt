@@ -121,6 +121,17 @@
 
 ### Phase 8 — Live Trading (IN PROGRESS)
 
+- Increment 8: bot creation execution-mode selector (AGENTS.md §11)
+  - The `/bots` create form now offers PAPER / DEMO / TESTNET / LIVE buttons backed by
+    `GET /api/brokers` (advisory): live modes are disabled until a Bybit credential pair is
+    configured AND the mode matches `BYBIT_ENVIRONMENT` (`DEMO→demo`, `TESTNET→testnet`,
+    `LIVE→mainnet`), mirroring the server-side gate in `BotsService.assertExecutionModeAllowed`
+    (which stays authoritative — the UI only surfaces the same rule). The selected mode is sent in
+    the existing `CreateBotInput.executionMode`
+  - Live-capable bots show a colored mode badge (PAPER zinc / DEMO emerald / TESTNET sky / LIVE red)
+    next to the status badge in the bot list; the unavailability hint + submit guard prevent a
+    client-side path that the server would reject anyway
+  - Web: `lib/brokers.ts` adds `BrokerExecutorInfo` + `listBrokers()`; no server changes
 - Increment 7: frontend live broker monitor + order controls (AGENTS.md §22)
   - New `/live-broker` page (JWT-gated): polls `GET /api/brokers/account` every 5s and renders
     environment badge, overview gems (equity/free/open counts), circuit breakers, balances,

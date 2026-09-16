@@ -50,6 +50,13 @@ export interface BrokerOrderRow {
   orderSymbol: string;
 }
 
+export interface BrokerExecutorInfo {
+  provider: "paper" | "bybit";
+  mode: "PAPER" | "LIVE";
+  environment: "paper" | "demo" | "testnet" | "mainnet";
+  available: boolean;
+}
+
 function authHeader(): { token: string } {
   const token = authStorage.getAccessToken();
   if (!token) {
@@ -60,6 +67,10 @@ function authHeader(): { token: string } {
 
 export function getAccountView(): Promise<LiveAccountView> {
   return apiRequest<LiveAccountView>("/api/brokers/account", authHeader());
+}
+
+export function listBrokers(): Promise<BrokerExecutorInfo[]> {
+  return apiRequest<BrokerExecutorInfo[]>("/api/brokers", authHeader());
 }
 
 export function cancelLiveOrder(orderId: string): Promise<unknown> {

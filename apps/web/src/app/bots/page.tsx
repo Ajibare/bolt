@@ -29,9 +29,18 @@ import {
   type StrategySummary,
 } from "@/lib/bots";
 import { cn } from "@/lib/utils";
+import { listBrokers } from "@/lib/brokers";
 
 const SMA_CROSSOVER_ID = "sma-crossover";
 const RSI_MEAN_REVERSION_ID = "rsi-mean-reversion";
+
+const LIVE_MODE_TO_ENVIRONMENT: Record<string, "demo" | "testnet" | "mainnet"> = {
+  DEMO: "demo",
+  TESTNET: "testnet",
+  LIVE: "mainnet",
+};
+
+const EXECUTION_MODES = ["PAPER", "DEMO", "TESTNET", "LIVE"] as const;
 
 const inputClass =
   "rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
@@ -53,6 +62,19 @@ function statusBadgeClass(status: string): string {
     case "STARTING":
     case "STOPPING":
       return "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300";
+    default:
+      return "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400";
+  }
+}
+
+function modeBadgeClass(mode: string): string {
+  switch (mode) {
+    case "LIVE":
+      return "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300";
+    case "TESTNET":
+      return "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300";
+    case "DEMO":
+      return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300";
     default:
       return "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400";
   }
@@ -117,6 +139,7 @@ export default function BotsPage() {
     slowPeriod: 20,
   });
   const [paperAccountId, setPaperAccountId] = useState("");
+  const [executionMode, setExecutionMode] = useState<string>("PAPER");
   const [quantity, setQuantity] = useState("1");
   const [stopLossPercent, setStopLossPercent] = useState("2");
   const [takeProfitPercent, setTakeProfitPercent] = useState("");
@@ -140,6 +163,12 @@ export default function BotsPage() {
   const accountsQuery = useQuery({
     queryKey: ["paper-accounts"],
     queryFn: () => listPaperAccounts(),
+    staleTime: 30_000,
+  });
+
+  const brokersQuery = useQuery({
+    queryKey: ["brokers"],
+    queryFn: () => listBrokers(),
     staleTime: 30_000,
   });
 
@@ -195,8 +224,20 @@ export default function BotsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bots"] });
       setName("Bot 1");
+      setExecutionMode("PAPER");
     },
   });
+
+  const bybit = brokersQuery.data?.find((executor) => executor.provider === "bybit");
+  const brokerAvailable = bybit?.available ?? false;
+  const brokerEnvironment = bybit?.environment ?? "paper";
+
+  function isModeAvailable(mode: string): boolean {
+    if (mode === "PAPER") {
+      return true;
+    }
+    return brokerAvailable && brokerEnvironment === LIVE_MODE_TO_ENVIRONMENT[mode];
+  }
 
   function selectStrategy(strategy: StrategySummary): void {
     setStrategyId(strategy.id);
@@ -224,7 +265,7 @@ export default function BotsPage() {
       config,
       riskConfig,
       paperAccountId,
-      executionMode: "PAPER",
+      executionMode,
       quantity,
       stopLossPercent: (Number(stopLossPercent) / 100).toString(),
       takeProfitPercent: takeProfitPercent
@@ -269,7 +310,8 @@ export default function BotsPage() {
           Bots
         </h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Bind a strategy to a paper account and run it continuously (PAPER mode).
+          Bind a strategy to an account, pick an execution mode, and choose inherited risk limits.
+          PAPER runs simulated; DEMO/TESTNET/LIVE route risk-checked orders to Bybit.
         </p>
         <Link
           href="/live-broker"
@@ -437,10 +479,50 @@ export default function BotsPage() {
           </label>
         </div>
 
-        <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-          Execution mode: <span className="font-mono">PAPER</span> (the only mode available in the
-          MVP; demo/testnet/live require broker credentials, Phase 8+).
-        </p>
+        <div className="mt-6">
+          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Execution mode</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {EXECUTION_MODES.map((mode) => {
+              const available = isModeAvailable(mode);
+              const isLive = mode !== "PAPER";
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  disabled={!available}
+                  onClick={() => setExecutionMode(mode)}
+                  className={cn(
+                    "rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                    mode === executionMode
+                      ? "border-zinc-900 bg-zinc-900 text-zinc-50 dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                      : "border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800",
+                  )}
+                >
+                  {mode}
+                  {isLive && !available ? " (unavailable)" : ""}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+            PAPER runs against the simulated broker. DEMO, TESTNET and LIVE route risk-checked
+            orders to Bybit (mode↔environment match with BYBIT_API_KEY/BYBIT_API_SECRET; the server
+            enforces this — the selection below is advisory).
+          </p>
+          {executionMode !== "PAPER" ? (
+            brokerAvailable ? (
+              <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
+                Broker configured for <span className="font-mono">{brokerEnvironment}</span> —{" "}
+                {executionMode} orders run on the live endpoint.
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                Live broker not configured — set BYBIT_API_KEY/BYBIT_API_SECRET to enable live
+                modes.
+              </p>
+            )
+          ) : null}
+        </div>
 
         {createMutation.isError ? (
           <p className="mt-4 text-sm text-red-600 dark:text-red-400">
@@ -450,7 +532,9 @@ export default function BotsPage() {
 
         <button
           type="submit"
-          disabled={createMutation.isPending || paperAccountId === ""}
+          disabled={
+            createMutation.isPending || paperAccountId === "" || !isModeAvailable(executionMode)
+          }
           className="mt-6 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
         >
           {createMutation.isPending ? "Creating…" : "Create bot"}
@@ -478,6 +562,14 @@ export default function BotsPage() {
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-zinc-900 dark:text-zinc-100">
                         {bot.name}
+                      </span>
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-xs font-medium",
+                          modeBadgeClass(bot.executionMode),
+                        )}
+                      >
+                        {bot.executionMode}
                       </span>
                       <span
                         className={cn(
