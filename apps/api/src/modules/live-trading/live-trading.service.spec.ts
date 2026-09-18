@@ -48,6 +48,10 @@ function adapter() {
     getPositions: vi.fn(async () => []),
     getOpenOrders: vi.fn(async () => []),
     cancelOrder: vi.fn(async () => undefined),
+    attachProtectiveBracket: vi.fn(async () => ({
+      bracketOrderListId: '9000',
+      createdAt: 1,
+    })),
   };
 }
 
@@ -239,6 +243,112 @@ describe('LiveTradingService.placeOrder', () => {
     expect(circuitBreaker.assertTradingAllowed).not.toHaveBeenCalled();
     expect(adapter!.placeOrder).toHaveBeenCalledTimes(1);
     expect(result.provider).toBe('bybit');
+  });
+});
+
+describe('LiveTradingService bracket attachment (Binance protective OCO)', () => {
+  const filledEntry: BrokerOrder = {
+    id: 'broker-7',
+    clientOrderId: 'bolt-1',
+    side: 'buy',
+    type: 'market',
+    symbol: SYMBOL,
+    quantity: '1',
+    reduceOnly: false,
+    status: 'FILLED',
+    filledQuantity: '1',
+    avgFillPrice: '100',
+    fees: '0',
+    createdAt: 0,
+    updatedAt: 0,
+  };
+
+  it('attaches a SELL OCO bracket after a filled Binance buy and persists its id', async () => {
+    const { service, adapter, orders } = createService({
+      provider: 'binance',
+    });
+    adapter!.placeOrder.mockResolvedValueOnce(filledEntry);
+
+    const result = await service.placeOrder(input);
+
+    expect(adapter!.placeOrder).toHaveBeenCalledTimes(1);
+    expect(adapter!.attachProtectiveBracket).toHaveBeenCalledWith({
+      entryOrderId: 'broker-7',
+      symbol: SYMBOL,
+      quantity: '1',
+      stopLoss: '95',
+      takeProfit: '105',
+      idempotencyKey: 'bolt-1-oco',
+    });
+    const saved = orders.save.mock.calls[0][0] as PaperOrderEntity;
+    expect(saved.bracketOrderListId).toBe('9000');
+    expect(result.provider).toBe('binance');
+  });
+
+  it('never attaches a bracket for the Bybit provider', async () => {
+    const { service, adapter } = createService({ provider: 'bybit' });
+    adapter!.placeOrder.mockResolvedValueOnce(filledEntry);
+
+    await service.placeOrder(input);
+
+    expect(adapter!.placeOrder).toHaveBeenCalledTimes(1);
+    expect(adapter!.attachProtectiveBracket).not.toHaveBeenCalled();
+  });
+
+  it('uses a deterministic bracket idempotency key for the same entry', async () => {
+    const { service, adapter } = createService({ provider: 'binance' });
+    adapter!.placeOrder.mockResolvedValueOnce(filledEntry);
+
+    await service.placeOrder(input);
+
+    expect(adapter!.attachProtectiveBracket).toHaveBeenCalledWith(
+      expect.objectContaining({ idempotencyKey: 'bolt-1-oco' }),
+    );
+  });
+
+  it('persists the entry truthfully and reverses it when the bracket fails', async () => {
+    const { service, adapter, orders } = createService({
+      provider: 'binance',
+    });
+    adapter!.placeOrder.mockResolvedValueOnce(filledEntry);
+    adapter!.attachProtectiveBracket = vi.fn(async () => {
+      throw new Error('OCO rejected by exchange');
+    });
+
+    await service.placeOrder(input);
+
+    expect(adapter!.placeOrder).toHaveBeenCalledTimes(2);
+    const reversal = adapter!.placeOrder.mock.calls[1][0] as unknown as {
+      side: string;
+      type: string;
+      symbol: string;
+      quantity: string;
+      reduceOnly: boolean;
+    };
+    expect(reversal).toMatchObject({
+      side: 'sell',
+      type: 'market',
+      symbol: SYMBOL,
+      quantity: '1',
+      reduceOnly: true,
+    });
+    const saved = orders.save.mock.calls[0][0] as PaperOrderEntity;
+    expect(saved.bracketOrderListId).toBeNull();
+    expect(saved.status).toBe('FILLED');
+  });
+
+  it('does not reverse an entry that never filled (no bracket possible)', async () => {
+    const { service, adapter } = createService({ provider: 'binance' });
+    adapter!.placeOrder.mockResolvedValueOnce({
+      ...filledEntry,
+      status: 'SUBMITTED',
+      filledQuantity: '0',
+    });
+
+    await service.placeOrder(input);
+
+    expect(adapter!.placeOrder).toHaveBeenCalledTimes(1);
+    expect(adapter!.attachProtectiveBracket).not.toHaveBeenCalled();
   });
 });
 

@@ -10,6 +10,7 @@ import { CreateBots1700000000006 } from './migrations/1700000000006-CreateBots.j
 import { CreateBotRunCycles1700000000007 } from './migrations/1700000000007-CreateBotRunCycles.js';
 import { AddBrokerReconciliation1700000000008 } from './migrations/1700000000008-AddBrokerReconciliation.js';
 import { AddCircuitBreakers1700000000009 } from './migrations/1700000000009-AddCircuitBreakers.js';
+import { AddBinanceOcoBracket1700000000010 } from './migrations/1700000000010-AddBinanceOcoBracket.js';
 
 /**
  * DataSource used by CLI-style migration and seed scripts run with tsx.
@@ -34,6 +35,7 @@ export function buildDataSource(
       CreateBotRunCycles1700000000007,
       AddBrokerReconciliation1700000000008,
       AddCircuitBreakers1700000000009,
+      AddBinanceOcoBracket1700000000010,
     ],
     synchronize: false,
     migrationsRun: false,

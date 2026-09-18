@@ -158,3 +158,32 @@ export interface BinanceAccountItem {
 export interface BinanceAccountInfo {
   balances: BinanceAccountItem[];
 }
+
+/** POST /api/v3/order/oco response (protective bracket, AGENTS.md §14/§45). */
+export interface BinanceOcoOrderReport {
+  symbol: string;
+  orderId: number;
+  orderListId: number;
+  clientOrderId: string;
+  price: string;
+  origQty: string;
+  executedQty: string;
+  cummulativeQuoteQty: string;
+  status: BinanceOrderStatus;
+  timeInForce: BinanceTimeInForce;
+  type: string;
+  side: BinanceOrderSide;
+  stopPrice: string;
+}
+
+export interface BinanceOcoResponse {
+  orderListId: number;
+  contingencyType: string;
+  listStatusType: string;
+  listOrderStatus: string;
+  listClientOrderId: string;
+  transactionTime: number;
+  symbol: string;
+  orders: Array<{ symbol: string; orderId: number; clientOrderId: string }>;
+  orderReports: BinanceOcoOrderReport[];
+}

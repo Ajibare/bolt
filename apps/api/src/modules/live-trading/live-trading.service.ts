@@ -9,10 +9,12 @@ import {
 } from '@trading-bolt/risk-engine';
 import {
   type BrokerAccountState,
+  type BrokerAdapter,
   type BrokerOrder,
   type BrokerOrderRequest,
   type BrokerPosition,
   type MonetaryOracle,
+  type ProtectiveBracketInput,
 } from '@trading-bolt/broker-adapters';
 import { toDecimal, type Money } from '@trading-bolt/shared';
 import { BrokersService } from '../brokers/brokers.service.js';
@@ -191,6 +193,19 @@ export class LiveTradingService {
     };
     const placed = await adapter.placeOrder(request);
 
+    // Binance spot protects a long only via a separate SELL OCO placed after
+    // the fill, so once the buy entry is FILLED we attach the bracket. If the
+    // bracket fails we close the just-opened position (fail-closed, §19) and
+    // record the entry truthfully so reconciliation can converge. A resting
+    // (not-yet-filled) entry is persisted without a bracket and flagged.
+    const bracketOrderListId = await this.attachBracketOrReconcile(
+      adapter,
+      provider,
+      input,
+      placed,
+      clientOrderId,
+    );
+
     const order = new PaperOrderEntity();
     order.accountId = input.accountId;
     order.clientOrderId = clientOrderId;
@@ -213,6 +228,7 @@ export class LiveTradingService {
     order.avgFillPrice = this.moneyOrNull(placed.avgFillPrice);
     order.fees = this.money(placed.fees);
     order.reason = placed.reason ?? null;
+    order.bracketOrderListId = bracketOrderListId;
     const persisted = await this.orders.save(order);
 
     await this.reconciliation.enqueue(input.accountId);
@@ -224,6 +240,112 @@ export class LiveTradingService {
       status: placed.status,
     });
     return persisted;
+  }
+
+  /**
+   * Attaches a protective bracket after a FILLED Binance buy entry — or, when
+   * the bracket cannot be placed, records the entry truthfully and closes a
+   * just-filled position it failed to protect so no unprotected exposure is
+   * left behind (AGENTS.md §19/§45). Providers that bracket at entry time
+   * (Bybit) and orders without SL/TP intent never enter this path.
+   */
+  private async attachBracketOrReconcile(
+    adapter: BrokerAdapter,
+    provider: string,
+    input: PlaceLiveOrderInput,
+    placed: BrokerOrder,
+    clientOrderId: string,
+  ): Promise<string | null> {
+    if (
+      provider !== 'binance' ||
+      input.side !== 'buy' ||
+      input.stopLoss == null ||
+      input.takeProfit == null ||
+      !adapter.attachProtectiveBracket
+    ) {
+      return null;
+    }
+    if (placed.status !== 'FILLED') {
+      this.logger.warn('BRACKET_DEFERRED', {
+        symbol: placed.symbol,
+        brokerStatus: placed.status,
+        clientOrderId,
+      });
+      return null;
+    }
+
+    const bracketInput: ProtectiveBracketInput = {
+      entryOrderId: placed.id,
+      symbol: placed.symbol,
+      quantity: placed.quantity,
+      stopLoss: input.stopLoss,
+      takeProfit: input.takeProfit,
+      idempotencyKey: this.bracketIdempotencyKey(clientOrderId),
+    };
+    try {
+      const bracket = await adapter.attachProtectiveBracket(bracketInput);
+      this.logger.log('BRACKET_ATTACHED', {
+        symbol: placed.symbol,
+        entryOrderId: placed.id,
+        bracketOrderListId: bracket.bracketOrderListId,
+        clientOrderId,
+      });
+      return bracket.bracketOrderListId;
+    } catch (error) {
+      this.logger.error('BRACKET_ATTACH_FAILED', {
+        symbol: placed.symbol,
+        entryOrderId: placed.id,
+        error: (error as Error).message,
+      });
+      // Fail-closed: the position exists but its protection does not. Close it
+      // now; reconciliation converges whatever the outcome (AGENTS.md §17).
+      await this.reverseFilledEntry(adapter, placed, clientOrderId);
+      return null;
+    }
+  }
+
+  /** Closes a just-filled entry with a reduce-only market sell (best effort). */
+  private async reverseFilledEntry(
+    adapter: BrokerAdapter,
+    placed: BrokerOrder,
+    entryClientOrderId: string,
+  ): Promise<void> {
+    const filled = toDecimal(placed.filledQuantity);
+    if (filled.lte(0)) {
+      return;
+    }
+    try {
+      const reversal = await adapter.placeOrder({
+        side: 'sell',
+        type: 'market',
+        symbol: placed.symbol,
+        quantity: filled.toString(),
+        reduceOnly: true,
+        clientOrderId: this.reversalIdempotencyKey(entryClientOrderId),
+      });
+      this.logger.warn('ENTRY_REVERSED', {
+        symbol: placed.symbol,
+        entryOrderId: placed.id,
+        reversalOrderId: reversal.id,
+        quantity: filled.toString(),
+      });
+    } catch (error) {
+      this.logger.error('ENTRY_REVERSAL_FAILED', {
+        symbol: placed.symbol,
+        entryOrderId: placed.id,
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  /** Deterministic bracket key, capped so the Binance 36-char limit holds. */
+  private bracketIdempotencyKey(clientOrderId: string): string {
+    return `${clientOrderId.slice(0, 32)}-oco`;
+  }
+
+  /** Deterministic reversal key for the same entry (idempotent retries). */
+  private reversalIdempotencyKey(entryClientOrderId: string): string {
+    return `${entryClientOrderId.slice(0, 32)}-rev`;
   }
 
   /** Signed broker-held quantity in a symbol (0 = flat), for intent sizing. */

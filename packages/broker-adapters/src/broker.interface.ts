@@ -100,6 +100,33 @@ export interface BrokerOrderIdentity {
   symbol?: string;
 }
 
+/**
+ * Protective bracket intent. Providers that attach SL/TP to the entry itself
+ * (Bybit) never need this; providers that must place the bracket as a separate
+ * order after the entry fills (Binance spot OCO) implement it.
+ */
+export interface ProtectiveBracketInput {
+  /** Broker-side id of the FILLED entry order this bracket protects. */
+  entryOrderId: string;
+  symbol: string;
+  /** Base-asset quantity the bracket guards (must be within the held lot). */
+  quantity: Money;
+  stopLoss: Money;
+  takeProfit: Money;
+  /**
+   * Deterministic per-bracket key (unique per logical bracket) so a retry can
+   * never create a second bracket (AGENTS.md §16).
+   */
+  idempotencyKey: string;
+}
+
+export interface ProtectiveBracket {
+  /** Broker-side order-list identifier of the placed bracket. */
+  bracketOrderListId: string;
+  /** Epoch-ms timestamp of bracket creation. */
+  createdAt: number;
+}
+
 export interface BrokerAdapter {
   placeOrder(request: BrokerOrderRequest): Promise<BrokerOrder>;
   cancelOrder(orderId: string, options?: BrokerOrderIdentity): Promise<void>;
@@ -107,4 +134,10 @@ export interface BrokerAdapter {
   getOpenOrders(symbol?: string): Promise<BrokerOrder[]>;
   getPositions(symbol?: string): Promise<BrokerPosition[]>;
   getAccountState(): Promise<BrokerAccountState>;
+  /**
+   * Places a protective stop-loss/take-profit bracket around an already-FILLED
+   * entry (e.g. Binance spot OCO). Optional: providers that attach SL/TP at
+   * entry time (Bybit) leave the base contract as-is.
+   */
+  attachProtectiveBracket?(input: ProtectiveBracketInput): Promise<ProtectiveBracket>;
 }

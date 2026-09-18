@@ -69,6 +69,37 @@ function orderResponse(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function ocoResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    orderListId: 9000,
+    contingencyType: "OCO",
+    listStatusType: "EXEC_STARTED",
+    listOrderStatus: "EXECUTING",
+    listClientOrderId: "bolt-1-oco",
+    transactionTime: NOW,
+    symbol: "BTCUSDT",
+    orders: [{ symbol: "BTCUSDT", orderId: 2001, clientOrderId: "bolt-1-oco" }],
+    orderReports: [
+      {
+        symbol: "BTCUSDT",
+        orderId: 2001,
+        orderListId: 9000,
+        clientOrderId: "bolt-1-oco",
+        price: "68000",
+        origQty: "0.5",
+        executedQty: "0",
+        cummulativeQuoteQty: "0",
+        status: "NEW",
+        timeInForce: "GTC",
+        type: "TAKE_PROFIT_LIMIT",
+        side: "SELL",
+        stopPrice: "0",
+      },
+    ],
+    ...overrides,
+  };
+}
+
 describe("BinanceAdapter", () => {
   it("fails closed when credentials are missing", () => {
     expect(() => new BinanceAdapter({ apiKey: "", apiSecret: "secret" })).toThrow(BrokerError);
@@ -234,19 +265,54 @@ describe("BinanceAdapter", () => {
       ).rejects.toThrow(InvalidOrderRequestError);
     });
 
-    it("rejects stopLoss/takeProfit fail-closed instead of trading unprotected", async () => {
+    it("rides SL/TP intent on a market buy entry metadata (bracket attaches after fill)", async () => {
+      const { app, calls, respondWith } = createMockAdapter();
+      respondWith(orderResponse({ side: "BUY", status: "FILLED" }));
+
+      const order = await app.placeOrder({
+        side: "buy",
+        type: "market",
+        symbol: "BTCUSDT",
+        quantity: "0.5",
+        stopLoss: "60000",
+        takeProfit: "68000",
+        clientOrderId: "bolt-1",
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(order.status).toBe("FILLED");
+      expect(calls[0].url).toContain("/api/v3/order?");
+    });
+
+    it("refuses stopLoss/takeProfit on a sell (spot closes cannot be bracketed)", async () => {
+      const { app } = createMockAdapter();
+      await expect(
+        app.placeOrder({
+          side: "sell",
+          type: "market",
+          symbol: "BTCUSDT",
+          quantity: "0.5",
+          stopLoss: "60000",
+          takeProfit: "68000",
+          clientOrderId: "c",
+        }),
+      ).rejects.toThrow(/sells are reduce-only closes/);
+    });
+
+    it("refuses stopLoss/takeProfit on a resting limit entry (no fill yet)", async () => {
       const { app } = createMockAdapter();
       await expect(
         app.placeOrder({
           side: "buy",
-          type: "market",
-          symbol: "SOLUSDT",
-          quantity: "1",
-          stopLoss: "50",
-          takeProfit: "150",
+          type: "limit",
+          symbol: "BTCUSDT",
+          quantity: "0.5",
+          price: "63000",
+          stopLoss: "60000",
+          takeProfit: "68000",
           clientOrderId: "c",
         }),
-      ).rejects.toThrow(/OCO|unprotected/);
+      ).rejects.toThrow(/resting limit/);
     });
 
     it("rejects a reduce-only buy (no short side on spot)", async () => {
@@ -290,6 +356,149 @@ describe("BinanceAdapter", () => {
           clientOrderId: "c",
         }),
       ).rejects.toMatchObject({ name: "BinanceApiError", code: -1100 });
+    });
+  });
+
+  describe("attachProtectiveBracket", () => {
+    it("submits a SELL limit OCO guarding the filled entry", async () => {
+      const { app, calls, respondWith } = createMockAdapter();
+      respondWith(ocoResponse());
+
+      const bracket = await app.attachProtectiveBracket({
+        entryOrderId: "1001",
+        symbol: "BTCUSDT",
+        quantity: "0.5",
+        stopLoss: "60000",
+        takeProfit: "68000",
+        idempotencyKey: "bolt-1-oco",
+      });
+
+      expect(calls).toHaveLength(1);
+      const call = calls[0];
+      expect(call.method).toBe("POST");
+      expect(call.url.startsWith(`${BASE_URL}/api/v3/order/oco?`)).toBe(true);
+      expect(call.headers["X-MBX-APIKEY"]).toBe("test-api-key");
+      expect(call.url).toContain("signature=");
+      expect(call.url).toContain("symbol=BTCUSDT");
+      expect(call.url).toContain("side=SELL");
+      expect(call.url).toContain("quantity=0.5");
+      expect(call.url).toContain("price=68000");
+      expect(call.url).toContain("stopPrice=60000");
+      expect(call.url).toContain("stopLimitPrice=60000");
+      expect(call.url).toContain("stopLimitTimeInForce=GTC");
+      expect(call.url).toContain("listClientOrderId=bolt-1-oco");
+
+      expect(bracket).toEqual({ bracketOrderListId: "9000", createdAt: NOW });
+    });
+
+    it("rounds prices to the tick and floors quantity to the lot size", async () => {
+      const { app, calls, respondWith } = createMockAdapter();
+      respondWith(ocoResponse());
+
+      await app.attachProtectiveBracket({
+        entryOrderId: "1001",
+        symbol: "BTCUSDT",
+        quantity: "0.555555",
+        stopLoss: "60000.077",
+        takeProfit: "68000.077",
+        idempotencyKey: "k",
+      });
+
+      expect(calls[0].url).toContain("quantity=0.55555");
+      expect(calls[0].url).toContain("stopPrice=60000.08");
+      expect(calls[0].url).toContain("stopLimitPrice=60000.08");
+      expect(calls[0].url).toContain("price=68000.08");
+    });
+
+    it("rejects unsupported symbols", async () => {
+      const { app } = createMockAdapter();
+      await expect(
+        app.attachProtectiveBracket({
+          entryOrderId: "1001",
+          symbol: "DOGEUSDT",
+          quantity: "1",
+          stopLoss: "0.2",
+          takeProfit: "0.3",
+          idempotencyKey: "k",
+        }),
+      ).rejects.toThrow(InvalidOrderRequestError);
+    });
+
+    it("rejects a missing leg (stopLoss or takeProfit)", async () => {
+      const { app } = createMockAdapter();
+      await expect(
+        app.attachProtectiveBracket({
+          entryOrderId: "1001",
+          symbol: "BTCUSDT",
+          quantity: "0.5",
+          stopLoss: "60000",
+          takeProfit: undefined as unknown as string,
+          idempotencyKey: "k",
+        }),
+      ).rejects.toThrow(/both stopLoss and takeProfit/);
+    });
+
+    it("rejects stopLoss at or above takeProfit (invalid bracket geometry)", async () => {
+      const { app } = createMockAdapter();
+      await expect(
+        app.attachProtectiveBracket({
+          entryOrderId: "1001",
+          symbol: "BTCUSDT",
+          quantity: "0.5",
+          stopLoss: "68000",
+          takeProfit: "68000",
+          idempotencyKey: "k",
+        }),
+      ).rejects.toThrow(/must be below takeProfit/);
+    });
+
+    it("rejects a missing entryOrderId and missing/overlong idempotencyKey", async () => {
+      const { app } = createMockAdapter();
+      await expect(
+        app.attachProtectiveBracket({
+          entryOrderId: "",
+          symbol: "BTCUSDT",
+          quantity: "0.5",
+          stopLoss: "60000",
+          takeProfit: "68000",
+          idempotencyKey: "k",
+        }),
+      ).rejects.toThrow(/entryOrderId is required/);
+      await expect(
+        app.attachProtectiveBracket({
+          entryOrderId: "1001",
+          symbol: "BTCUSDT",
+          quantity: "0.5",
+          stopLoss: "60000",
+          takeProfit: "68000",
+          idempotencyKey: "",
+        }),
+      ).rejects.toThrow(/idempotencyKey must be/);
+      await expect(
+        app.attachProtectiveBracket({
+          entryOrderId: "1001",
+          symbol: "BTCUSDT",
+          quantity: "0.5",
+          stopLoss: "60000",
+          takeProfit: "68000",
+          idempotencyKey: "x".repeat(37),
+        }),
+      ).rejects.toThrow(/idempotencyKey must be/);
+    });
+
+    it("surfaces provider errors as BinanceApiError", async () => {
+      const { app, respondWith } = createMockAdapter();
+      respondWith({ code: -2022, msg: "ReduceOnly rejected" }, 400);
+      await expect(
+        app.attachProtectiveBracket({
+          entryOrderId: "1001",
+          symbol: "BTCUSDT",
+          quantity: "0.5",
+          stopLoss: "60000",
+          takeProfit: "68000",
+          idempotencyKey: "k",
+        }),
+      ).rejects.toMatchObject({ name: "BinanceApiError", code: -2022 });
     });
   });
 

@@ -134,6 +134,19 @@ export class PaperOrderEntity {
   })
   brokerStatus: string | null;
 
+  /**
+   * Binance OCO order-list id of the protective bracket attached after this
+   * entry filled (null before it is placed). The bracket itself is not
+   * persisted as an order row; its legs surface through the broker monitor.
+   */
+  @Column({
+    name: 'bracket_order_list_id',
+    type: 'varchar',
+    length: 64,
+    nullable: true,
+  })
+  bracketOrderListId: string | null;
+
   /** When the local row last matched broker state (reconciliation timestamp). */
   @Column({
     name: 'last_synced_at',

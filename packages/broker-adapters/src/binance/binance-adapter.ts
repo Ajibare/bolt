@@ -1,3 +1,4 @@
+import { Decimal } from "decimal.js";
 import type {
   BrokerAccountState,
   BrokerAdapter,
@@ -5,6 +6,8 @@ import type {
   BrokerOrderIdentity,
   BrokerOrderRequest,
   BrokerPosition,
+  ProtectiveBracket,
+  ProtectiveBracketInput,
 } from "../broker.interface.js";
 import { BrokerError, InvalidOrderRequestError } from "../errors.js";
 import { BinanceHttpClient } from "./http-client.js";
@@ -23,6 +26,7 @@ import {
   isBinanceEnvironment,
   type BinanceAccountInfo,
   type BinanceAdapterConfig,
+  type BinanceOcoResponse,
   type BinanceOrderQuery,
   type BinanceOrderResponse,
 } from "./types.js";
@@ -39,9 +43,12 @@ const MAX_CLIENT_ORDER_ID_LENGTH = 36;
  * - `clientOrderId` maps to `newClientOrderId`, giving callers an idempotency
  *   key (AGENTS.md §16).
  * - Fail-closed by construction: the constructor halts without a credential
- *   pair, and unsupported intent (spot has no SL/TP on the create endpoint;
- *   OCO is a follow-up) is refused instead of being silently dropped
+ *   pair, and unsupported intent is refused instead of being silently dropped
  *   (AGENTS.md §24/§20).
+ * - Binance spot cannot attach SL/TP legs to an entry order. Protective
+ *   brackets are placed AFTER the entry fills via `/api/v3/order/oco` (see
+ *   `attachProtectiveBracket`); the entry call therefore carries the SL/TP
+ *   intent as metadata only.
  * - Binance spot does not track position cost basis, so `getPositions`
  *   derives held quantity from account balances with `avgEntryPrice: "0"`.
  *   P&L must never be computed from that field.
@@ -101,6 +108,70 @@ export class BinanceAdapter implements BrokerAdapter {
       throw new BrokerError("Binance accepted the order without returning an orderId.");
     }
     return mapOrder(response, response.transactTime, response.transactTime);
+  }
+
+  /**
+   * Places a protective bracket against a FILLED long entry (AGENTS.md §14).
+   *
+   * Binance spot has no short side, so a bracket is always a SELL
+   * "limit OCO": one SELL leg at `takeProfit`, and one SELL stop-limit leg
+   * that triggers at `stopLoss`. Executing or cancelling either leg cancels
+   * the other automatically, which is exactly the SL/TP protection the bot's
+   * policy requests. The bracket must only be submitted once the entry has
+   * actually filled — Binance rejects a sell that exceeds held balance.
+   */
+  async attachProtectiveBracket(input: ProtectiveBracketInput): Promise<ProtectiveBracket> {
+    const filter = BINANCE_INSTRUMENT_FILTERS[input.symbol];
+    if (!filter) {
+      throw new InvalidOrderRequestError(
+        `Symbol "${input.symbol}" has no instrument filter configured.`,
+      );
+    }
+    if (!input.entryOrderId) {
+      throw new InvalidOrderRequestError("entryOrderId is required.");
+    }
+    if (!input.idempotencyKey || input.idempotencyKey.length > MAX_CLIENT_ORDER_ID_LENGTH) {
+      throw new InvalidOrderRequestError(
+        `idempotencyKey must be 1-${MAX_CLIENT_ORDER_ID_LENGTH} characters (idempotency).`,
+      );
+    }
+    if (!input.stopLoss || !input.takeProfit) {
+      throw new InvalidOrderRequestError(
+        "A protective bracket requires both stopLoss and takeProfit.",
+      );
+    }
+    if (new Decimal(input.stopLoss).gte(new Decimal(input.takeProfit))) {
+      throw new InvalidOrderRequestError(
+        "stopLoss must be below takeProfit for a SELL bracket on a long position.",
+      );
+    }
+
+    const quantity = normalizeQuantity(input.quantity, filter.qtyStep, input.symbol);
+    const params: Record<string, string> = {
+      symbol: input.symbol,
+      side: "SELL",
+      quantity,
+      // Take-profit leg (resting SELL above the market).
+      price: roundToStep(input.takeProfit, filter.tickSize),
+      // Stop-loss leg: trigger + a limit execution depth guard.
+      stopPrice: roundToStep(input.stopLoss, filter.tickSize),
+      stopLimitPrice: roundToStep(input.stopLoss, filter.tickSize),
+      stopLimitTimeInForce: "GTC",
+      listClientOrderId: input.idempotencyKey,
+    };
+
+    const response = await this.client.request<BinanceOcoResponse>(
+      "POST",
+      "/api/v3/order/oco",
+      params,
+    );
+    if (!response.orderListId) {
+      throw new BrokerError("Binance accepted the OCO without returning an orderListId.");
+    }
+    return {
+      bracketOrderListId: String(response.orderListId),
+      createdAt: response.transactionTime,
+    };
   }
 
   async cancelOrder(orderId: string, options?: BrokerOrderIdentity): Promise<void> {
@@ -188,11 +259,23 @@ export class BinanceAdapter implements BrokerAdapter {
       );
     }
     if (request.stopLoss !== undefined || request.takeProfit !== undefined) {
-      throw new InvalidOrderRequestError(
-        "Binance spot cannot attach stopLoss/takeProfit to the create-order call " +
-          "(OCO support is a follow-up milestone). Refusing to trade unprotected " +
-          "is the fail-closed behavior.",
-      );
+      // The entry itself never carries SL/TP legs on spot; the protective
+      // bracket is placed separately after the entry fills
+      // (attachProtectiveBracket). Only market buy entries may express that
+      // intent: a sell-side close cannot be bracketed on spot yet, and a limit
+      // entry stays open (and so cannot be bracketed immediately). Both are
+      // refused fail-closed rather than silently trading unprotected.
+      if (request.type === "limit") {
+        throw new InvalidOrderRequestError(
+          "Limit entries with stopLoss/takeProfit are refused: Binance spot protects a " +
+            "position only after a fill, and a resting limit has not filled yet.",
+        );
+      }
+      if (request.side === "sell") {
+        throw new InvalidOrderRequestError(
+          "Binance spot sells are reduce-only closes; stopLoss/takeProfit on a sell is not supported.",
+        );
+      }
     }
     if (request.reduceOnly && request.side === "buy") {
       throw new InvalidOrderRequestError(
