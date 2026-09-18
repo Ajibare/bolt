@@ -9,11 +9,11 @@
     "build": "nest build",
     "deploy": "nest deploy",
     "dev": "nest start --watch",
-    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\"",
     "start": "nest start",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main.js",
-    "lint": "oxlint src/ test/",
+    "lint": "oxlint src/ test/ scripts/",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -21,7 +21,8 @@
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
     "db:migrate": "tsx src/database/run-migrations.ts",
-    "db:seed": "tsx src/database/run-seed.ts"
+    "db:seed": "tsx src/database/run-seed.ts",
+    "smoke:binance": "tsx scripts/smoke-binance.ts"
   },
   "dependencies": {
     "@nestjs/bullmq": "^12.0.0",
