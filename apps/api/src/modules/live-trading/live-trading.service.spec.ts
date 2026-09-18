@@ -53,6 +53,7 @@ function adapter() {
 
 function createService(overrides: {
   adapter?: ReturnType<typeof adapter> | null;
+  provider?: 'binance' | 'bybit';
   facts?: RiskAccountState;
   existing?: PaperOrderEntity | null;
   assertAllowed?: () => void;
@@ -82,7 +83,8 @@ function createService(overrides: {
     ),
   };
   const brokers = {
-    getBybitAdapter: vi.fn(() => broker),
+    getLiveAdapter: vi.fn(() => broker),
+    provider: vi.fn(() => overrides.provider ?? 'bybit'),
     environment: vi.fn(() => 'demo'),
   };
   const markets = {
@@ -183,6 +185,14 @@ describe('LiveTradingService.placeOrder', () => {
     expect(result.provider).toBe('bybit');
   });
 
+  it('persists the Binance provider when Binance is the active broker', async () => {
+    const { service } = createService({ provider: 'binance' });
+
+    const result = await service.placeOrder(input);
+
+    expect(result.provider).toBe('binance');
+  });
+
   it('rejects a risky order and never reaches the broker', async () => {
     const { service, adapter } = createService({
       facts: { ...HEALTHY_FACTS, openPositions: 10 },
@@ -279,7 +289,9 @@ describe('LiveTradingService.cancelOrder', () => {
 
     const result = await service.cancelOrder('user-1', 'order-1');
 
-    expect(adapter!.cancelOrder).toHaveBeenCalledWith('broker-1');
+    expect(adapter!.cancelOrder).toHaveBeenCalledWith('broker-1', {
+      symbol: SYMBOL,
+    });
     expect(result.status).toBe('SUBMITTED');
     expect(reconciliation.enqueue).toHaveBeenCalledWith('acc-1');
   });
@@ -375,7 +387,9 @@ describe('LiveTradingService.emergencyFlatten', () => {
       symbol: SYMBOL,
     });
 
-    expect(brokerAdapter!.cancelOrder).toHaveBeenCalledWith('open-1');
+    expect(brokerAdapter!.cancelOrder).toHaveBeenCalledWith('open-1', {
+      symbol: SYMBOL,
+    });
     expect(brokerAdapter!.placeOrder).toHaveBeenCalledWith(
       expect.objectContaining({
         side: 'sell',

@@ -41,7 +41,7 @@ function makeService(options: {
     listByAccount: vi.fn(async (_accountId: string) => defaultOrders),
   };
   const brokers = {
-    getBybitAdapter: vi.fn(() => options.adapter),
+    getLiveAdapter: vi.fn(() => options.adapter),
   };
   const service = new PositionReconciliationService(
     orders as never,

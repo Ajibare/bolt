@@ -63,7 +63,7 @@ function makeService(options: {
     }),
   };
   const brokers = {
-    getBybitAdapter: vi.fn(() => options.adapter),
+    getLiveAdapter: vi.fn(() => options.adapter),
   };
   const service = new OrderReconciliationService(
     repo as never,

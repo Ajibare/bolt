@@ -45,3 +45,11 @@ export function isSupportedSymbol(value: string): value is SupportedSymbol {
 export function unsupportedSymbolMessage(value: string): string {
   return `Unsupported symbol "${value}". Supported: ${SUPPORTED_SYMBOLS.join(", ")}`;
 }
+
+/**
+ * Providers whose orders are real executions persisted in the live ledger
+ * (AGENTS.md §13). `paper_orders.provider` holds any live provider on this
+ * list; queries that sweep broker state must never filter on a single broker.
+ */
+export const LIVE_ORDER_PROVIDERS = ["binance", "bybit"] as const;
+export type LiveOrderProvider = (typeof LIVE_ORDER_PROVIDERS)[number];

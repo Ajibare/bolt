@@ -28,12 +28,13 @@ import {
 import { canStart, transition } from './bot-lifecycle.js';
 import { BotScheduler } from './bot-scheduler.js';
 
-/** Execution modes that run against the live Bybit broker (AGENTS.md §11). */
+/** Execution modes that run against the live broker (AGENTS.md §11). */
 const LIVE_EXECUTION_MODES = ['DEMO', 'TESTNET', 'LIVE'] as const;
 
 /**
- * A bot's execution mode must match the configured Bybit environment so a
- * "demo" bot can never route real orders to mainnet (fail-closed).
+ * A bot's execution mode must match the configured broker environment so a
+ * "demo" bot can never route real orders to mainnet (fail-closed). DEMO is a
+ * Bybit-only capability; Binance does not offer a demo environment.
  */
 const LIVE_MODE_TO_BROKER_ENVIRONMENT: Record<
   (typeof LIVE_EXECUTION_MODES)[number],
@@ -320,13 +321,15 @@ export class BotsService {
     }
     if (!this.brokers.isLiveConfigured()) {
       throw new BadRequestException(
-        `Execution mode ${executionMode} requires live broker credentials (BYBIT_API_KEY/BYBIT_API_SECRET)`,
+        `Execution mode ${executionMode} requires live broker credentials ` +
+          `(BINANCE_API_KEY/BINANCE_API_SECRET, or BYBIT_API_KEY/BYBIT_API_SECRET for demo)`,
       );
     }
     const configuredEnvironment = this.brokers.environment();
     if (configuredEnvironment !== expectedEnvironment) {
       throw new BadRequestException(
-        `Execution mode ${executionMode} is incompatible with BYBIT_ENVIRONMENT "${configuredEnvironment}" (requires "${expectedEnvironment}")`,
+        `Execution mode ${executionMode} is incompatible with the configured ` +
+          `broker environment "${configuredEnvironment}" (requires "${expectedEnvironment}")`,
       );
     }
   }

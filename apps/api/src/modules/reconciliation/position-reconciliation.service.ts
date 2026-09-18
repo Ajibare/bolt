@@ -42,7 +42,7 @@ export class PositionReconciliationService {
   async reconcile(
     job?: ReconciliationJob,
   ): Promise<PositionReconciliationOutcome> {
-    const adapter = this.brokers.getBybitAdapter();
+    const adapter = this.brokers.getLiveAdapter();
     const skipped: PositionReconciliationOutcome = {
       checkedAccounts: 0,
       comparedSymbols: 0,
@@ -64,7 +64,7 @@ export class PositionReconciliationService {
 
     for (const accountId of accounts) {
       const local = await this.orders.listByAccount(accountId);
-      if (!local.some((order) => order.provider === 'bybit')) {
+      if (!local.some((order) => order.provider !== 'paper')) {
         continue;
       }
       const expected = this.expectedNetPositions(local);
@@ -100,7 +100,7 @@ export class PositionReconciliationService {
   ): Map<string, string> {
     const expected = new Map<string, ReturnType<typeof toDecimal>>();
     for (const order of orders) {
-      if (order.provider !== 'bybit') {
+      if (order.provider === 'paper') {
         continue;
       }
       const filled = toDecimal(order.filledQuantity ?? '0');

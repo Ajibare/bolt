@@ -47,7 +47,7 @@ export class OrderReconciliationService {
   ) {}
 
   async reconcile(job?: ReconciliationJob): Promise<ReconciliationOutcome> {
-    const adapter = this.brokers.getBybitAdapter();
+    const adapter = this.brokers.getLiveAdapter();
     if (!adapter) {
       return { checked: 0, updated: 0, mismatches: [] };
     }
@@ -88,7 +88,9 @@ export class OrderReconciliationService {
 
     let remote;
     try {
-      remote = await adapter.getOrder(order.brokerOrderId);
+      remote = await adapter.getOrder(order.brokerOrderId, {
+        symbol: order.symbol,
+      });
     } catch (error) {
       const detail = (error as Error).message ?? 'Unknown broker error';
       this.logger.error('BROKER_RECONCILE_ERROR', {

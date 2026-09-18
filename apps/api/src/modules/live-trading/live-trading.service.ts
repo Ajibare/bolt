@@ -94,10 +94,10 @@ export interface LiveAccountView {
  * Risk-gated execution against a live broker (AGENTS.md §9-12/§16/§18/§19).
  *
  * Every live order passes the risk engine (and the circuit breaker) BEFORE
- * reaching the adapter. Orders are persisted with `provider='bybit'` and a
- * broker order id; a freshly submitted live order is SUBMITTED — its fill
- * state converges exclusively through reconciliation (AGENTS.md §17). This
- * service never guesses a fill.
+ * reaching the adapter. Orders are persisted with the active provider and a
+ * broker order id; a freshly submitted live order starts non-terminal — its
+ * fill state converges exclusively through reconciliation (AGENTS.md §17).
+ * This service never guesses a fill.
  */
 @Injectable()
 export class LiveTradingService {
@@ -113,10 +113,11 @@ export class LiveTradingService {
   ) {}
 
   async placeOrder(input: PlaceLiveOrderInput): Promise<PaperOrderEntity> {
-    const adapter = this.brokers.getBybitAdapter();
-    if (!adapter) {
+    const adapter = this.brokers.getLiveAdapter();
+    const provider = this.brokers.provider();
+    if (!adapter || !provider) {
       throw new BadRequestException(
-        'Live broker not configured (BYBIT_API_KEY/BYBIT_API_SECRET required)',
+        'Live broker not configured (BINANCE_API_KEY/BINANCE_API_SECRET, or BYBIT_* for demo)',
       );
     }
 
@@ -194,7 +195,7 @@ export class LiveTradingService {
     order.accountId = input.accountId;
     order.clientOrderId = clientOrderId;
     order.brokerOrderId = placed.id;
-    order.provider = 'bybit';
+    order.provider = provider;
     order.brokerStatus = placed.status;
     order.lastSyncedAt = new Date();
     order.side = placed.side;
@@ -217,7 +218,7 @@ export class LiveTradingService {
     await this.reconciliation.enqueue(input.accountId);
     this.logger.log('ORDER_SUBMITTED', {
       orderId: persisted.id,
-      provider: 'bybit',
+      provider,
       symbol: placed.symbol,
       side: placed.side,
       status: placed.status,
@@ -230,7 +231,7 @@ export class LiveTradingService {
     accountId: string,
     symbol: string,
   ): Promise<string | null> {
-    const adapter = this.brokers.getBybitAdapter();
+    const adapter = this.brokers.getLiveAdapter();
     if (!adapter) {
       throw new BadRequestException('Live broker not configured');
     }
@@ -261,11 +262,11 @@ export class LiveTradingService {
     if (!owned) {
       throw new BadRequestException('Order not found');
     }
-    const adapter = this.brokers.getBybitAdapter();
+    const adapter = this.brokers.getLiveAdapter();
     if (!adapter) {
       throw new BadRequestException('Live broker not configured');
     }
-    if (order.provider !== 'bybit') {
+    if (order.provider === 'paper') {
       throw new BadRequestException(
         'Only live broker orders can be cancelled via the broker',
       );
@@ -281,12 +282,12 @@ export class LiveTradingService {
         `Cannot cancel an order in status ${order.status}`,
       );
     }
-    await adapter.cancelOrder(order.brokerOrderId);
+    await adapter.cancelOrder(order.brokerOrderId, { symbol: order.symbol });
     await this.reconciliation.enqueue(order.accountId);
     this.logger.log('ORDER_CANCELLATION_SUBMITTED', {
       orderId: order.id,
       brokerOrderId: order.brokerOrderId,
-      provider: 'bybit',
+      provider: order.provider,
     });
     return order;
   }
@@ -299,7 +300,7 @@ export class LiveTradingService {
    * logged and swallowed so flattening still completes.
    */
   async emergencyFlatten(input: EmergencyFlattenInput): Promise<void> {
-    const adapter = this.brokers.getBybitAdapter();
+    const adapter = this.brokers.getLiveAdapter();
     if (!adapter) {
       throw new BadRequestException('Live broker not configured');
     }
@@ -315,7 +316,7 @@ export class LiveTradingService {
     }
     for (const open of openOrders) {
       try {
-        await adapter.cancelOrder(open.id);
+        await adapter.cancelOrder(open.id, { symbol: open.symbol });
       } catch (error) {
         this.logger.warn('EMERGENCY_FLATTEN_CANCEL_FAILED', {
           orderId: open.id,
@@ -364,7 +365,7 @@ export class LiveTradingService {
    * reads are wrapped so a failure in one surface degrades to a warning.
    */
   async getAccountView(): Promise<LiveAccountView> {
-    const adapter = this.brokers.getBybitAdapter();
+    const adapter = this.brokers.getLiveAdapter();
     const circuitBreakers = [...this.circuitBreaker.open()];
     const base = {
       environment: this.brokers.environment(),
@@ -459,7 +460,7 @@ export class LiveTradingService {
     input: PlaceLiveOrderInput,
     oracle: MonetaryOracle | null,
   ): Promise<Awaited<ReturnType<CircuitBreakerService['observeAccount']>>> {
-    const adapter = this.brokers.getBybitAdapter();
+    const adapter = this.brokers.getLiveAdapter();
     if (!adapter) {
       throw new BadRequestException('Live broker not configured');
     }

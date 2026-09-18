@@ -51,7 +51,7 @@ export interface BrokerOrderRow {
 }
 
 export interface BrokerExecutorInfo {
-  provider: "paper" | "bybit";
+  provider: "paper" | "binance" | "bybit";
   mode: "PAPER" | "LIVE";
   environment: "paper" | "demo" | "testnet" | "mainnet";
   available: boolean;

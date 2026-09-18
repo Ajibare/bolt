@@ -121,7 +121,7 @@ export class PaperOrderEntity {
   })
   brokerOrderId: string | null;
 
-  /** Executing provider ('paper' by default; 'bybit' for live bots). */
+  /** Executing provider ('paper' by default; a live provider for live bots). */
   @Column({ name: 'provider', type: 'varchar', length: 16, default: 'paper' })
   provider: string;
 

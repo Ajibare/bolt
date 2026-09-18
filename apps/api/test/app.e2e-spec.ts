@@ -382,10 +382,14 @@ describe('Bots (e2e)', () => {
       (entry: { provider: string }) => entry.provider === 'paper',
     );
     expect(paper).toMatchObject({ mode: 'PAPER', available: true });
+    const binance = res.body.find(
+      (entry: { provider: string }) => entry.provider === 'binance',
+    );
+    // E2E runs without BINANCE credentials, so the live broker must be refused.
+    expect(binance).toMatchObject({ mode: 'LIVE', available: false });
     const bybit = res.body.find(
       (entry: { provider: string }) => entry.provider === 'bybit',
     );
-    // E2E runs without BYBIT credentials, so the live broker must be refused.
     expect(bybit).toMatchObject({ mode: 'LIVE', available: false });
   });
 
@@ -398,10 +402,11 @@ describe('Bots (e2e)', () => {
       .get('/api/brokers/account')
       .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
-    // E2E runs without BYBIT credentials, so the monitor must fail closed
-    // without exposing any credential-shaped data.
+    // E2E runs without broker credentials, so the monitor must fail closed
+    // without exposing any credential-shaped data. The reported target is the
+    // primary development exchange: Binance Testnet.
     expect(res.body.configured).toBe(false);
-    expect(res.body.environment).toBe('demo');
+    expect(res.body.environment).toBe('testnet');
     expect(res.body.balances).toBeNull();
     expect(res.body.positions).toBeNull();
     expect(res.body.openOrders).toBeNull();

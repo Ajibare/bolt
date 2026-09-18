@@ -93,10 +93,17 @@ export interface BrokerAccountState {
   }>;
 }
 
+export interface BrokerOrderIdentity {
+  /** Broker-side symbol required by providers whose order APIs are keyed by
+   * symbol + orderId (e.g. Binance spot). Providers without that requirement
+   * ignore it. */
+  symbol?: string;
+}
+
 export interface BrokerAdapter {
   placeOrder(request: BrokerOrderRequest): Promise<BrokerOrder>;
-  cancelOrder(orderId: string): Promise<void>;
-  getOrder(orderId: string): Promise<BrokerOrder | null>;
+  cancelOrder(orderId: string, options?: BrokerOrderIdentity): Promise<void>;
+  getOrder(orderId: string, options?: BrokerOrderIdentity): Promise<BrokerOrder | null>;
   getOpenOrders(symbol?: string): Promise<BrokerOrder[]>;
   getPositions(symbol?: string): Promise<BrokerPosition[]>;
   getAccountState(): Promise<BrokerAccountState>;

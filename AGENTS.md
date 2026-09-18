@@ -558,6 +558,15 @@ ENCRYPTION_KEY=
 AI_API_KEY=
 BROKER_API_KEY=
 BROKER_API_SECRET=
+# Binance is the primary live broker; BINANCE_ENV must be 'testnet' except
+# in production (mainnet is refused when NODE_ENV is not 'production').
+BINANCE_ENV=testnet
+BINANCE_API_KEY=
+BINANCE_API_SECRET=
+# Bybit is an optional second live broker / demo capability.
+BYBIT_API_KEY=
+BYBIT_API_SECRET=
+BYBIT_ENVIRONMENT=demo
 ```
 
 Never place actual credentials in source code.

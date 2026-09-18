@@ -4,7 +4,7 @@
 
 **Project:** Trading Bolt
 **Purpose:** Algorithmic Cryptocurrency Trading Platform
-**Primary Exchange:** Bybit
+**Primary Exchange:** Binance (Testnet for development) — Bybit as secondary/fallback
 **Primary Language:** TypeScript
 **Backend:** NestJS + Node.js
 **Frontend:** Next.js + React
@@ -112,7 +112,7 @@ Paper Trading
     ↓
 Bot Engine
     ↓
-Bybit Demo/Testnet
+Binance Testnet / Bybit Demo-Testnet
     ↓
 Live Trading
     ↓
@@ -191,7 +191,7 @@ PHASE 4   Backtesting Engine
 PHASE 5   Risk Management Engine
 PHASE 6   Paper Trading
 PHASE 7   Bot Engine
-PHASE 8   Bybit Integration
+PHASE 8   Broker Integration (Binance primary, Bybit secondary)
 PHASE 9   Live Trading
 PHASE 10  Portfolio & Analytics
 PHASE 11  Notifications & Monitoring

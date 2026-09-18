@@ -1,6 +1,6 @@
 # Trading Bolt — Project Status
 
-**Last updated:** 2026-09-15 (Phase 8 increment 7: frontend live broker monitor + order controls)
+**Last updated:** 2026-09-18 (Phase 8 increment 8: Binance Testnet becomes the primary live broker)
 **Branch:** `main`
 **Last commit:** `95da872` — "update on bolt" (Phase 7 Bot Engine, 2026-09-13)
 
@@ -8,7 +8,7 @@
 
 ## Current Phase
 
-**Phase 8 — Bybit Demo/Testnet** (IN PROGRESS — increments 1–7 done)
+**Phase 8 — Binance Testnet (primary) / Bybit (fallback)** (IN PROGRESS — increments 1–8 done)
 
 ---
 
@@ -24,7 +24,7 @@
 | 5     | Risk Engine                | COMPLETE (unit-verified)                       |
 | 6     | Paper Trading              | COMPLETE (unit-verified, steps A–D)            |
 | 7     | Bot Engine                 | COMPLETE (unit + E2E verified)                 |
-| 8     | Bybit Demo/Testnet         | IN PROGRESS                                    |
+| 8     | Binance Testnet (primary)  | IN PROGRESS                                    |
 | 9     | Live Trading               | NOT STARTED                                    |
 | 10    | Portfolio & Analytics      | NOT STARTED                                    |
 | 11    | Notifications & Monitoring | NOT STARTED                                    |
@@ -48,7 +48,7 @@
 - GitHub Actions CI workflow (`.github/workflows/ci.yml`)
 - ESLint (eslint + oxlint), Prettier, TypeScript base configs
 - `.env.example`, `.editorconfig`, `.gitignore`, `.dockerignore`, `.npmrc`
-- Unit tests: shared (23), indicators (30), trading-engine (47), risk-engine (51), api (237), broker-adapters (73) = **461 total**
+- Unit tests: shared (23), indicators (30), trading-engine (47), risk-engine (51), api (266), broker-adapters (95) = **512 total**
 
 ### Phase 1 — Authentication & Users
 
@@ -132,6 +132,32 @@
     next to the status badge in the bot list; the unavailability hint + submit guard prevent a
     client-side path that the server would reject anyway
   - Web: `lib/brokers.ts` adds `BrokerExecutorInfo` + `listBrokers()`; no server changes
+- Increment 8: Binance Testnet becomes the primary live broker (AGENTS.md §11/§12/§14)
+  - New `@trading-bolt/broker-adapters/src/binance/` module: `BinanceAdapter` (async
+    `BrokerAdapter`) + HMAC-SHA256 `BinanceHttpClient` (sorted+URL-encoded query, injectable
+    `fetch`/`now` for deterministic tests), `mappers.ts` (REST→`BrokerOrder`/account/positions,
+    precision-step helpers `floorToStep`/`roundToStep` mirroring Bybit) and a 14-test spec
+  - Env validation hardens `BINANCE_*`: `BINANCE_ENV` enum (default `testnet`); mainnet refused
+    unless `NODE_ENV=production` (fail-closed); a partial `BINANCE_API_KEY`/`BINANCE_API_SECRET`
+    pair is refused. Testnet base URL `https://testnet.binance.vision`, mainnet `https://api.binance.com`
+  - `BrokersService` becomes an **active-provider router**: `provider()` = `'binance'` when a
+    Binance credential pair is configured, else `'bybit'`, else `null`; `getLiveAdapter()`/`environment()`
+    replace the Bybit-only `getBybitAdapter()`. Live order paths in `LiveTradingService`, the
+    order-reconciliation service, position reconciliation, and emergency flatten all route through
+    the active adapter and pass `{ symbol }` to `getOrder`/`cancelOrder` (Binance spot orders are
+    keyed by symbol). Paper-trading repo queries generalize to `provider IN (binance, bybit)`
+  - Interface: `BrokerOrderIdentity { symbol? }` added to the `BrokerAdapter` contract;
+    `BinanceApiError` carries the REST `code` (e.g. `-2013` → `getOrder` returns `null`). Status
+    mapping `NEW→ACCEPTED`, `CANCELED/EXPIRED/PENDING_CANCEL→CANCELLED`, `REJECTED→REJECTED`
+  - Binance spot semantics documented at the adapter: no cost basis (`avgEntryPrice "0"`), no
+    shorts, `reduceOnly` not sent, and `stopLoss`/`takeProfit` rejected fail-closed (OCO support is
+    a follow-up); bots with SL/TP set hard-error on Binance rather than trading unsafely
+  - Web: `BrokerExecutorInfo.provider` now `"paper" | "binance" | "bybit"`; the `/bots` page prefers
+    the Binance executor for the live-broker badge/guard, falling back to Bybit. e2e broker
+    assertions updated (unconfigured `environment` now `'testnet'`; binance executor listed)
+  - Unit tests: env.validation +8, brokers.service reworked, live-trading spec now covers the
+    Binance provider, reconciliation specs pass symbol — api package now **266 unit tests**;
+    broker-adapters now **95 tests** (512 total)
 - Increment 7: frontend live broker monitor + order controls (AGENTS.md §22)
   - New `/live-broker` page (JWT-gated): polls `GET /api/brokers/account` every 5s and renders
     environment badge, overview gems (equity/free/open counts), circuit breakers, balances,
@@ -286,7 +312,7 @@
 | PostgreSQL | READY (Docker)           | `docker compose up -d postgres` — postgres:17-alpine, healthy                                                       |
 | Redis      | READY (Docker)           | `docker compose up -d redis` — redis:7-alpine, healthy                                                              |
 | Docker     | READY                    | Docker 29.7.2 + Compose v5.5.1 available on dev machine (was previously unavailable)                                |
-| Tests      | PASS (476 unit + 15 e2e) | Shared 23, indicators 30, trading-engine 47, risk-engine 51, api 252, broker-adapters 73; 15 e2e in app.e2e-spec.ts |
+| Tests      | PASS (512 unit + 15 e2e) | Shared 23, indicators 30, trading-engine 47, risk-engine 51, api 266, broker-adapters 95; 15 e2e in app.e2e-spec.ts |
 | TypeScript | PASS                     | All 9 workspaces type-check cleanly                                                                                 |
 | Lint       | PASS                     | eslint + oxlint, 0 warnings                                                                                         |
 | Formatting | PASS                     | All files conform to Prettier                                                                                       |
@@ -458,26 +484,47 @@ BullMQ (BotExecutionProcessor)
 
 ---
 
-## Bybit State
+## Broker State
 
-**In progress (increments 1–7 done).** `BybitAdapter` in `@trading-bolt/broker-adapters`, env-backed
-`BrokersModule`/`GET /api/brokers`, the `order-reconciliation` engine (service + queue + processor +
-periodic sweep), the risk-gated live execution path (`LiveTradingService`) with the circuit-breaker
-layer (persistent via migration 9, hydrated at boot), live order cancellation, per-bot emergency
-stop (kill-switch flatten, reduce-only, never blocked by breakers), the live broker account monitor
-(`GET /api/brokers/account`), local-vs-broker position reconciliation (read-only, divergence
-logging), and the frontend live-broker monitor + order/emergency-stop controls (`/live-broker`,
-`/bots`) are all in place and unit-tested against mocks. Live bot creation requires matching
-credentials+environment, and DEMO/TESTNET/LIVE bots route through risk checks before any adapter call.
-**Remaining:** real demo/testnet smoke test (needs credentials), an execution-mode selector in the
-bot creation form (backend gate exists; PAPER-only UI today), re-evaluation of the
-single-broker-account model (Known Problem #9).
+**Binance Testnet — primary live broker (increments 1–8 done).** `BinanceAdapter` +
+HMAC `BinanceHttpClient` in `@trading-bolt/broker-adapters` (testnet base
+`https://testnet.binance.vision`), BINANCE env validation with a mainnet production-only guard, and
+`BrokersService` as the active-provider router — live execution, cancellation, reconciliation,
+emergency flatten and the account monitor all route through `provider()='binance'` when credentials
+are present, with Bybit as the fallback. Spot semantics documented at the adapter: no cost basis and
+no shorts (positions derived from balances), `reduceOnly` omitted, and SL/TP rejected fail-closed
+until OCO support lands. **Remaining:** real testnet smoke test (needs Docker/network from this
+machine), OCO bracket orders, and marking profit from fill fees.
+
+**Bybit — fallback provider.** The Bybit adapter, env-backed `BrokersModule`/`GET /api/brokers`, the
+`order-reconciliation` engine (service + queue + processor + periodic sweep), the risk-gated live
+execution path (`LiveTradingService`) with the persistent circuit-breaker layer (hydration at boot),
+live order cancellation, per-bot emergency stop (kill-switch flatten, reduce-only, never blocked by
+breakers), the live broker account monitor (`GET /api/brokers/account`), local-vs-broker position
+reconciliation (read-only, divergence logging), and the frontend live-broker monitor +
+order/emergency-stop controls (`/live-broker`, `/bots`) are all in place and unit-tested against
+mocks. Live bot creation requires matching credentials+environment, and DEMO/TESTNET/LIVE bots route
+through risk checks before any adapter call.
+**Remaining:** an execution-mode selector in the bot creation form (backend gate exists; PAPER-only
+UI today), re-evaluation of the single-broker-account model (Known Problem #9).
 
 ---
 
 ## Last Completed Task
 
-1. **Phase 8 — Increment 7: frontend live broker monitor + order controls (2026-09-15)** — added the
+1. **Phase 8 — Increment 8: Binance Testnet becomes the primary live broker (2026-09-18)** — added the
+   `@trading-bolt/broker-adapters/src/binance/` module (`BinanceAdapter`, HMAC-SHA256
+   `BinanceHttpClient`, REST mappers with step helpers, 14-test spec), `BINANCE_*` env validation
+   (default `testnet`; mainnet production-only guard), and reworked `BrokersService` into an
+   active-provider router — `provider()` = binance when its credential pair is present, else bybit,
+   else null. Live execution/cancellation, order + position reconciliation, emergency flatten and
+   the account monitor now route through the active adapter and pass `{ symbol }` to `getOrder`/
+   `cancelOrder`. Spot semantics documented at the adapter (no cost basis/shorts, `reduceOnly`
+   omitted, SL/TP rejected fail-closed until OCO). Web `BrokerExecutorInfo` now includes `"binance"`
+   and the `/bots` page prefers the Binance executor. Unit tests api **266**, broker-adapters **95**
+   (512 total); e2e assertions updated (`environment` `'testnet'` when unconfigured, binance executor
+   listed).
+2. **Phase 8 — Increment 7: frontend live broker monitor + order controls (2026-09-15)** — added the
    `/live-broker` page (JWT-gated, 5s polling of `GET /api/brokers/account`): environment badge,
    overview gems (equity/free/open counts), open circuit breakers, balances, positions and open
    orders, with a fail-closed "not configured" empty state and per-surface broker warnings instead
@@ -491,7 +538,7 @@ single-broker-account model (Known Problem #9).
    (`getAccountView`, `cancelLiveOrder`), `lib/bots.ts` `emergencyStopBot`, dashboard + `/bots`
    navigation links. New test: getAccountView local-id enrichment (1) — api **252 unit tests**
    (476 total); e2e **15**; web build passes with the new route.
-2. **Phase 8 — Increment 6: live account monitor + position reconciliation (2026-09-15)** — added
+3. **Phase 8 — Increment 6: live account monitor + position reconciliation (2026-09-15)** — added
    `GET /api/brokers/account` (`LiveAccountController` + `LiveTradingService.getAccountView`): a
    JWT-guarded read-only view of the configured broker (wallet balances + summed equity/free, broker
    positions + open orders, open circuit breakers, per-surface warnings; never credentials; fails
@@ -502,7 +549,7 @@ single-broker-account model (Known Problem #9).
    now returns `ReconciliationRunOutcome` (order + position passes per job). New tests:
    position-reconciliation (10), getAccountView (4) — api **251 unit tests** (475 total); e2e **15**
    (+`GET /api/brokers/account` 200 fail-closed + 401).
-3. **Phase 8 — Increment 5: live order management + emergency controls (2026-09-15)** — added
+4. **Phase 8 — Increment 5: live order management + emergency controls (2026-09-15)** — added
    `POST /api/brokers/orders/:orderId/cancel` (`LiveOrdersController` + `LiveTradingService.cancelOrder`,
    server-side ownership, only `provider='bybit'`, idempotent, status converges via reconciliation) and
    `POST /api/bots/:botId/emergency-stop` (`BotsService.emergencyStop` → `LiveTradingService.emergencyFlatten`:
@@ -513,7 +560,7 @@ single-broker-account model (Known Problem #9).
    and exports `PaperAccountRepository` from `PaperTradingModule`. New tests: breaker persistence/
    hydration, cancel (6), emergency flatten (3), bots emergency-stop (3) — api now 237 unit tests
    (461 total); e2e now 13 (cancel + emergency-stop 401).
-4. **Phase 8 — Increment 4: live bot routing + circuit breaker (2026-09-15)** — added the
+5. **Phase 8 — Increment 4: live bot routing + circuit breaker (2026-09-15)** — added the
    `live-trading` module (`LiveTradingService`, `CircuitBreakerService`, `LiveAccountRiskTracker`)
    and wired risk-gated routing into `BotRunnerService` by `ExecutionMode`. Every live order passes
    `evaluateOrder` + the breaker before reaching the adapter, is persisted as `provider='bybit'`
@@ -522,21 +569,21 @@ single-broker-account model (Known Problem #9).
    creation gate now requires a configured broker AND a mode↔environment match. Extracted
    `ReconciliationProducer` (shared by scheduler + live placement). 27 new unit tests (breaker 9,
    live-trading 10, bots gate 5, runner routing 3); api now 223 unit tests; 447 total + 11 e2e.
-5. **Phase 8 — Increment 3: order reconciliation engine (2026-09-15)** — added
+6. **Phase 8 — Increment 3: order reconciliation engine (2026-09-15)** — added
    `OrderReconciliationService` (reads pending `provider='bybit'` non-terminal orders, probes the
    broker with `getOrder`, copies fills verbatim, fails orders missing at the broker, logs
    terminal/open or identity divergences without overwriting), a `order-reconciliation` BullMQ
    processor + 30s periodic scheduler (live-only), scoped sweeps, and a `listPendingLive`
    repository query. `ReconciliationJob`/`ReconciliationOutcome` types added to the shared package.
    9 unit tests; no live routing yet at the time.
-6. **Phase 8 — Increment 2: API brokers module + env-backed registry (2026-09-15)** — added
+7. **Phase 8 — Increment 2: API brokers module + env-backed registry (2026-09-15)** — added
    `BrokersModule`/`BrokersService` (registry over `PaperBroker` + `BybitAdapter`, lazy adapter
    construction, no credentials ever exposed) and JWT-guarded `GET /api/brokers`. Env validation
    hardens `BYBIT_*`: `BYBIT_ENVIRONMENT` enum (`demo|testnet|mainnet`, default `demo`) and a
    super-refined key/secret pair rule (partial pairs refuse boot). Migration 8
    (`AddBrokerReconciliation`, applied) adds `provider`/`broker_status`/`last_synced_at` to
    `paper_orders` as reconciliation groundwork. 13 new unit tests (env.validation 7, brokers.service 6) + 2 e2e tests.
-7. **Phase 8 — Increment 1: `BybitAdapter` (2026-09-15)** — built the Bybit v5 adapter in
+8. **Phase 8 — Increment 1: `BybitAdapter` (2026-09-15)** — built the Bybit v5 adapter in
    `@trading-bolt/broker-adapters` behind the existing `BrokerAdapter` abstraction: signed REST
    client (HMAC-SHA256, injectable `FetchLike` transport, no runtime deps added), order
    place/cancel/get/list, positions and unified wallet mapping, strict order-status mapping with

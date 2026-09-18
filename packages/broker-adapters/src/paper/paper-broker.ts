@@ -4,6 +4,7 @@ import type {
   BrokerAccountState,
   BrokerAdapter,
   BrokerOrder,
+  BrokerOrderIdentity,
   BrokerOrderRequest,
   BrokerPosition,
 } from "../broker.interface.js";
@@ -149,7 +150,7 @@ export class PaperBroker implements BrokerAdapter {
     return this.toBrokerOrder(order);
   }
 
-  async cancelOrder(orderId: string): Promise<void> {
+  async cancelOrder(orderId: string, _options?: BrokerOrderIdentity): Promise<void> {
     const order = this.orders.get(orderId);
     if (!order) {
       throw new OrderNotFoundError(orderId);
@@ -164,7 +165,7 @@ export class PaperBroker implements BrokerAdapter {
     order.updatedAt = Date.now();
   }
 
-  async getOrder(orderId: string): Promise<BrokerOrder | null> {
+  async getOrder(orderId: string, _options?: BrokerOrderIdentity): Promise<BrokerOrder | null> {
     const order = this.orders.get(orderId);
     return order ? this.toBrokerOrder(order) : null;
   }

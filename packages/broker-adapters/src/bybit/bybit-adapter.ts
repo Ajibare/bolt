@@ -2,6 +2,7 @@ import type {
   BrokerAccountState,
   BrokerAdapter,
   BrokerOrder,
+  BrokerOrderIdentity,
   BrokerOrderRequest,
   BrokerPosition,
 } from "../broker.interface.js";
@@ -128,7 +129,7 @@ export class BybitAdapter implements BrokerAdapter {
     };
   }
 
-  async cancelOrder(orderId: string): Promise<void> {
+  async cancelOrder(orderId: string, _options?: BrokerOrderIdentity): Promise<void> {
     const order = await this.getOrder(orderId);
     if (!order) {
       throw new BrokerError(`Cannot cancel unknown order "${orderId}"`);
@@ -145,7 +146,7 @@ export class BybitAdapter implements BrokerAdapter {
     });
   }
 
-  async getOrder(orderId: string): Promise<BrokerOrder | null> {
+  async getOrder(orderId: string, _options?: BrokerOrderIdentity): Promise<BrokerOrder | null> {
     const response = await this.client.request<BybitApiResponse<BybitOrderListResult>>({
       method: "GET",
       path: "/v5/order/realtime",

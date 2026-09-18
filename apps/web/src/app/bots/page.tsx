@@ -228,9 +228,11 @@ export default function BotsPage() {
     },
   });
 
-  const bybit = brokersQuery.data?.find((executor) => executor.provider === "bybit");
-  const brokerAvailable = bybit?.available ?? false;
-  const brokerEnvironment = bybit?.environment ?? "paper";
+  const liveBroker =
+    brokersQuery.data?.find((executor) => executor.provider === "binance") ??
+    brokersQuery.data?.find((executor) => executor.provider === "bybit");
+  const brokerAvailable = liveBroker?.available ?? false;
+  const brokerEnvironment = liveBroker?.environment ?? "paper";
 
   function isModeAvailable(mode: string): boolean {
     if (mode === "PAPER") {

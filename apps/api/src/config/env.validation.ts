@@ -7,6 +7,7 @@ const environmentValues = Object.values(Environment) as [
 ];
 const logLevelValues = Object.values(LogLevel) as [LogLevel, ...LogLevel[]];
 const bybitEnvironmentValues = ['demo', 'testnet', 'mainnet'] as const;
+const binanceEnvironmentValues = ['testnet', 'mainnet'] as const;
 
 export const envSchema = z
   .object({
@@ -42,6 +43,9 @@ export const envSchema = z
     BYBIT_API_KEY: z.string().optional(),
     BYBIT_API_SECRET: z.string().optional(),
     BYBIT_ENVIRONMENT: z.enum(bybitEnvironmentValues).default('demo'),
+    BINANCE_API_KEY: z.string().optional(),
+    BINANCE_API_SECRET: z.string().optional(),
+    BINANCE_ENV: z.enum(binanceEnvironmentValues).default('testnet'),
     AI_API_KEY: z.string().optional(),
   })
   .superRefine((value, ctx) => {
@@ -54,6 +58,26 @@ export const envSchema = z
         message:
           'BYBIT_API_KEY and BYBIT_API_SECRET must be set together (fail-closed)' +
           ' — a partial secret pair is refused so the API never boots half-configured.',
+      });
+    }
+    const hasBinanceKey = (value.BINANCE_API_KEY ?? '').trim().length > 0;
+    const hasBinanceSecret = (value.BINANCE_API_SECRET ?? '').trim().length > 0;
+    if (hasBinanceKey !== hasBinanceSecret) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['BINANCE_API_KEY'],
+        message:
+          'BINANCE_API_KEY and BINANCE_API_SECRET must be set together (fail-closed)' +
+          ' — a partial secret pair is refused so the API never boots half-configured.',
+      });
+    }
+    if (value.BINANCE_ENV === 'mainnet' && value.NODE_ENV !== 'production') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['BINANCE_ENV'],
+        message:
+          'BINANCE_ENV=mainnet is refused outside production (fail-closed).' +
+          ' Development and testing must target Binance Testnet.',
       });
     }
   });
