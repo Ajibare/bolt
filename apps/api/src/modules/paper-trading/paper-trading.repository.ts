@@ -89,4 +89,12 @@ export abstract class PaperPortfolioRepository {
   abstract latestByAccount(
     accountId: string,
   ): Promise<PaperPortfolioSnapshotEntity | null>;
+
+  /**
+   * Every equity snapshot for an account in ascending time order, so the
+   * portfolio equity curve can be rebuilt without replaying candles.
+   */
+  abstract listByAccount(
+    accountId: string,
+  ): Promise<PaperPortfolioSnapshotEntity[]>;
 }

@@ -51,6 +51,11 @@ import {
       useClass: TypeOrmPaperPortfolioRepository,
     },
   ],
-  exports: [PaperTradingService, PaperOrderRepository, PaperAccountRepository],
+  exports: [
+    PaperTradingService,
+    PaperOrderRepository,
+    PaperAccountRepository,
+    PaperPortfolioRepository,
+  ],
 })
 export class PaperTradingModule {}

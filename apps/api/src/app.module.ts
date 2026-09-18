@@ -12,6 +12,7 @@ import { PaperTradingModule } from './modules/paper-trading/paper-trading.module
 import { BrokersModule } from './modules/brokers/brokers.module.js';
 import { ReconciliationModule } from './modules/reconciliation/reconciliation.module.js';
 import { LiveTradingModule } from './modules/live-trading/live-trading.module.js';
+import { AnalyticsModule } from './modules/analytics/analytics.module.js';
 import { BotsModule } from './modules/bots/bots.module.js';
 import { RedisModule } from './redis/redis.module.js';
 
@@ -56,6 +57,7 @@ import { RedisModule } from './redis/redis.module.js';
     BrokersModule,
     ReconciliationModule,
     LiveTradingModule,
+    AnalyticsModule,
     BotsModule,
   ],
 })

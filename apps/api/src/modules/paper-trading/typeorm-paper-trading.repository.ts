@@ -193,4 +193,11 @@ export class TypeOrmPaperPortfolioRepository extends PaperPortfolioRepository {
       order: { createdAt: 'DESC' },
     });
   }
+
+  listByAccount(accountId: string): Promise<PaperPortfolioSnapshotEntity[]> {
+    return this.repo.find({
+      where: { accountId },
+      order: { createdAt: 'ASC' },
+    });
+  }
 }

@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { LIVE_ORDER_PROVIDERS } from '@trading-bolt/shared';
-import { TypeOrmPaperOrderRepository } from './typeorm-paper-trading.repository.js';
+import {
+  TypeOrmPaperOrderRepository,
+  TypeOrmPaperPortfolioRepository,
+} from './typeorm-paper-trading.repository.js';
 
 type Operator = { _type: string; _value: string[] };
 type WhereBranch = Record<string, unknown>;
@@ -51,5 +54,30 @@ describe('TypeOrmPaperOrderRepository.listPendingLive', () => {
     const where = (find.mock.calls[0][0] as ListPendingOptions).where;
     expect(where[0].accountId).toBe('acc-9');
     expect(where[1].accountId).toBe('acc-9');
+  });
+});
+
+describe('TypeOrmPaperPortfolioRepository.listByAccount', () => {
+  type PortfolioFindOptions = {
+    where: { accountId: string };
+    order: { createdAt: 'ASC' };
+  };
+
+  function makePortfolioRepo() {
+    const find = vi.fn(
+      async (_options?: PortfolioFindOptions): Promise<never[]> => [],
+    );
+    const repo = { find };
+    const impl = new TypeOrmPaperPortfolioRepository(repo as never);
+    return { impl, find };
+  }
+
+  it('queries snapshots for an account in ascending time order', async () => {
+    const { impl, find } = makePortfolioRepo();
+    await impl.listByAccount('acc-7');
+
+    const options = find.mock.calls[0][0] as PortfolioFindOptions;
+    expect(options.where.accountId).toBe('acc-7');
+    expect(options.order.createdAt).toBe('ASC');
   });
 });
