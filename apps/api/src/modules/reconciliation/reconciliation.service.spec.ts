@@ -109,6 +109,52 @@ describe('OrderReconciliationService', () => {
     expect(saved[0].lastSyncedAt).toBeInstanceOf(Date);
   });
 
+  it('settles real fill fees on an already-terminal local order', async () => {
+    // A market entry fills at creation with provisional fees "0"; the first
+    // reconciliation sweep replaces them with the broker's cumulative figure
+    // (BinanceAdapter derives it from /api/v3/myTrades).
+    const order = makeOrder({ status: 'FILLED', filledQuantity: '10' });
+    const adapter: BrokerAdapter = {
+      getOrder: vi.fn(async () =>
+        remoteOrder({
+          status: 'FILLED',
+          avgFillPrice: '1.50',
+          filledQuantity: '10',
+          fees: '0.023',
+        }),
+      ),
+    } as never;
+    const { service, saved } = makeService({ pending: [order], adapter });
+
+    const outcome = await service.reconcile();
+
+    expect(outcome.updated).toBe(1);
+    expect(outcome.mismatches).toEqual([]);
+    expect(saved[0].status).toBe('FILLED');
+    expect(saved[0].fees).toBe('0.023');
+  });
+
+  it('keeps local fees when a terminal order still shows open at the broker', async () => {
+    const order = makeOrder({
+      status: 'FILLED',
+      filledQuantity: '10',
+      fees: '7.5',
+    });
+    const adapter: BrokerAdapter = {
+      getOrder: vi.fn(async () =>
+        remoteOrder({ status: 'ACCEPTED', fees: '0' }),
+      ),
+    } as never;
+    const { service, saved } = makeService({ pending: [order], adapter });
+
+    const outcome = await service.reconcile();
+
+    expect(outcome.mismatches).toHaveLength(1);
+    expect(saved[0].status).toBe('FILLED');
+    // A broker "open" view of a filled local order must never erase real fees.
+    expect(saved[0].fees).toBe('7.5');
+  });
+
   it('marks brokerStatus on an unchanged pending order', async () => {
     const order = makeOrder();
     const adapter: BrokerAdapter = {

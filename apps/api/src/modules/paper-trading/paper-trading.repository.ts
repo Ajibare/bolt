@@ -44,8 +44,9 @@ export abstract class PaperOrderRepository {
   ): Promise<PaperOrderEntity[]>;
 
   /**
-   * Pending (non-terminal) orders placed through a live broker provider,
-   * used by order reconciliation (AGENTS.md §17).
+   * Live-provider orders that still need a broker sync (AGENTS.md §17):
+   * non-terminal orders plus any FILLED order not yet reconciled (whose fill
+   * fees settle on that first sweep).
    */
   abstract listPendingLive(accountId?: string): Promise<PaperOrderEntity[]>;
 

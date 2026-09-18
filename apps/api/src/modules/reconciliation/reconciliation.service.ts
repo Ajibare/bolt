@@ -126,7 +126,14 @@ export class OrderReconciliationService {
       });
     }
 
+    const divergent =
+      remote.symbol !== order.symbol ||
+      remote.side !== order.side ||
+      (PENDING_LIVE_STATUSES.has(remote.status) &&
+        TERMINAL_STATUSES.has(order.status));
+
     let changed = false;
+    const feesBefore = order.fees;
 
     if (
       TERMINAL_STATUSES.has(remote.status) &&
@@ -151,6 +158,20 @@ export class OrderReconciliationService {
       order.avgFillPrice = this.moneyOrNull(remote.avgFillPrice);
       order.fees = this.money(remote.fees);
       changed = true;
+    }
+
+    // Fees converge from the broker's cumulative figures whenever the remote
+    // view is faithful — even when both sides are already FILLED: a market
+    // entry fills at creation, and on that first sweep the real myTrades fees
+    // replace the provisional "0". Divergent views never touch local fees.
+    if (!divergent) {
+      const settledFees = this.money(remote.fees);
+      if (order.fees !== settledFees) {
+        order.fees = settledFees;
+        changed = true;
+      }
+    } else {
+      order.fees = feesBefore;
     }
 
     order.brokerStatus = remote.status;

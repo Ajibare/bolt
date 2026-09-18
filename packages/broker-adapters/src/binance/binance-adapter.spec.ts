@@ -69,6 +69,50 @@ function orderResponse(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** GET /api/v3/order-style (query/open) shape, which getOrder maps. */
+function queryResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    symbol: "BTCUSDT",
+    orderId: 1001,
+    orderListId: -1,
+    clientOrderId: "bolt-1",
+    price: "0.00000000",
+    origQty: "0.5",
+    executedQty: "0",
+    cummulativeQuoteQty: "0.00000000",
+    status: "NEW",
+    timeInForce: "GTC",
+    type: "MARKET",
+    side: "BUY",
+    stopPrice: "0",
+    icebergQty: "0",
+    time: NOW,
+    updateTime: NOW,
+    isWorking: false,
+    origQuoteOrderQty: "0",
+    ...overrides,
+  };
+}
+
+/** GET /api/v3/myTrades item — the authoritative fill commission record. */
+function myTrade(overrides: Record<string, unknown> = {}) {
+  return {
+    symbol: "BTCUSDT",
+    id: 1,
+    orderId: 1001,
+    price: "64000.00000000",
+    qty: "0.5",
+    quoteQty: "32000.00000000",
+    commission: "3.20000000",
+    commissionAsset: "USDT",
+    time: NOW,
+    isBuyer: true,
+    isMaker: false,
+    isBestMatch: true,
+    ...overrides,
+  };
+}
+
 function ocoResponse(overrides: Record<string, unknown> = {}) {
   return {
     orderListId: 9000,
@@ -549,6 +593,7 @@ describe("BinanceAdapter", () => {
         isWorking: true,
         origQuoteOrderQty: "0",
       });
+      respondWith([]); // myTrades sweep: no fills yet -> no fees
 
       const order = await app.getOrder("1001", { symbol: "BTCUSDT" });
 
@@ -558,6 +603,7 @@ describe("BinanceAdapter", () => {
         filledQuantity: "0.2",
         avgFillPrice: "64000",
         price: "64000.00",
+        fees: "0",
         createdAt: NOW,
         updatedAt: NOW + 1000,
       });
@@ -567,6 +613,80 @@ describe("BinanceAdapter", () => {
       const { app, respondWith } = createMockAdapter();
       respondWith({ code: -2013, msg: "Order does not exist." }, 400);
       expect(await app.getOrder("9999", { symbol: "BTCUSDT" })).toBeNull();
+    });
+
+    it("records cumulative fill fees from myTrades for a filled order", async () => {
+      const { app, respondWith, calls } = createMockAdapter();
+      respondWith(
+        queryResponse({
+          status: "FILLED",
+          executedQty: "0.5",
+          cummulativeQuoteQty: "32000",
+        }),
+      );
+      respondWith([myTrade({ commission: "3.2" }), myTrade({ id: 2, commission: "3.2" })]);
+
+      const order = await app.getOrder("1001", { symbol: "BTCUSDT" });
+
+      expect(order?.fees).toBe("6.4");
+      expect(calls).toHaveLength(2);
+      expect(calls[1].url).toContain("myTrades");
+      expect(calls[1].url).toContain("symbol=BTCUSDT");
+      expect(calls[1].url).toContain("orderId=1001");
+    });
+
+    it("excludes commissions settled outside the pair's quote asset", async () => {
+      const { app, respondWith } = createMockAdapter();
+      respondWith(
+        queryResponse({
+          status: "FILLED",
+          executedQty: "0.5",
+          cummulativeQuoteQty: "32000",
+        }),
+      );
+      // A BNB-discounted leg must never be converted into USDT by guessing a
+      // price (AGENTS.md §14/§27); only the USDT commission is recorded.
+      respondWith([
+        myTrade({ commission: "2" }),
+        myTrade({ id: 2, commission: "0.5", commissionAsset: "BNB" }),
+      ]);
+
+      const order = await app.getOrder("1001", { symbol: "BTCUSDT" });
+
+      expect(order?.fees).toBe("2");
+    });
+
+    it("skips the fee sweep when nothing has filled", async () => {
+      const { app, respondWith, calls } = createMockAdapter();
+      respondWith(
+        queryResponse({
+          status: "NEW",
+          executedQty: "0",
+          cummulativeQuoteQty: "0",
+        }),
+      );
+
+      const order = await app.getOrder("1001", { symbol: "BTCUSDT" });
+
+      expect(order?.fees).toBe("0");
+      expect(calls).toHaveLength(1);
+    });
+
+    it("keeps provisional fees when the myTrades sweep fails", async () => {
+      const { app, respondWith } = createMockAdapter();
+      respondWith(
+        queryResponse({
+          status: "FILLED",
+          executedQty: "0.5",
+          cummulativeQuoteQty: "32000",
+        }),
+      );
+      respondWith({ code: -2014, msg: "Request rejected" }, 500);
+
+      const order = await app.getOrder("1001", { symbol: "BTCUSDT" });
+
+      expect(order).not.toBeNull();
+      expect(order?.fees).toBe("0");
     });
   });
 

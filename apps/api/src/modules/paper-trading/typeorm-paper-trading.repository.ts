@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LIVE_ORDER_PROVIDERS } from '@trading-bolt/shared';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import {
   PaperAccountEntity,
   PaperOrderEntity,
@@ -86,13 +86,28 @@ export class TypeOrmPaperOrderRepository extends PaperOrderRepository {
     });
   }
 
+  /**
+   * Live-provider orders that still need a broker sync (AGENTS.md §17):
+   * non-terminal orders plus FILLED orders that have never been reconciled
+   * (their fill fees settle from the broker's myTrades figures on that first
+   * sweep, after which they drop out).
+   */
   listPendingLive(accountId?: string): Promise<PaperOrderEntity[]> {
+    const scope = (id?: string) => (id ? { accountId: id } : {});
     return this.repo.find({
-      where: {
-        provider: In([...LIVE_ORDER_PROVIDERS]),
-        status: In(['SUBMITTED', 'ACCEPTED', 'PARTIALLY_FILLED']),
-        ...(accountId ? { accountId } : {}),
-      },
+      where: [
+        {
+          provider: In([...LIVE_ORDER_PROVIDERS]),
+          status: In(['SUBMITTED', 'ACCEPTED', 'PARTIALLY_FILLED']),
+          ...scope(accountId),
+        },
+        {
+          provider: In([...LIVE_ORDER_PROVIDERS]),
+          status: 'FILLED',
+          lastSyncedAt: IsNull(),
+          ...scope(accountId),
+        },
+      ],
       order: { createdAt: 'ASC' },
     });
   }

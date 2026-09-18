@@ -187,3 +187,19 @@ export interface BinanceOcoResponse {
   orders: Array<{ symbol: string; orderId: number; clientOrderId: string }>;
   orderReports: BinanceOcoOrderReport[];
 }
+
+/** GET /api/v3/myTrades trade item (authoritative fill fees, AGENTS.md §14). */
+export interface BinanceMyTrade {
+  symbol: string;
+  id: number;
+  orderId: number;
+  price: string;
+  qty: string;
+  quoteQty: string;
+  commission: string;
+  commissionAsset: string;
+  time: number;
+  isBuyer: boolean;
+  isMaker: boolean;
+  isBestMatch: boolean;
+}

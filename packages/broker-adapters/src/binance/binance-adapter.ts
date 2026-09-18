@@ -12,12 +12,14 @@ import type {
 import { BrokerError, InvalidOrderRequestError } from "../errors.js";
 import { BinanceHttpClient } from "./http-client.js";
 import {
+  deriveQuoteAsset,
   mapAccountState,
   mapOrder,
   mapOrderSide,
   mapPositions,
   normalizeQuantity,
   roundToStep,
+  sumCommissionFees,
 } from "./mappers.js";
 import {
   BinanceApiError,
@@ -26,6 +28,7 @@ import {
   isBinanceEnvironment,
   type BinanceAccountInfo,
   type BinanceAdapterConfig,
+  type BinanceMyTrade,
   type BinanceOcoResponse,
   type BinanceOrderQuery,
   type BinanceOrderResponse,
@@ -184,17 +187,44 @@ export class BinanceAdapter implements BrokerAdapter {
 
   async getOrder(orderId: string, options?: BrokerOrderIdentity): Promise<BrokerOrder | null> {
     const symbol = this.requireSymbol("getOrder", options);
+    let response: BinanceOrderQuery;
     try {
-      const response = await this.client.request<BinanceOrderQuery>("GET", "/api/v3/order", {
+      response = await this.client.request<BinanceOrderQuery>("GET", "/api/v3/order", {
         symbol,
         orderId,
       });
-      return mapOrder(response, response.time, response.updateTime);
     } catch (error) {
       if (error instanceof BinanceApiError && error.code === ORDER_NOT_FOUND_CODE) {
         return null;
       }
       throw error;
+    }
+    const order = mapOrder(response, response.time, response.updateTime);
+    await this.applyFillFees(order);
+    return order;
+  }
+
+  /**
+   * Reconciles the order's `fees` from /api/v3/myTrades (the authoritative
+   * fill-commission record; GET /api/v3/order carries none). Only commissions
+   * settled in the pair's quote asset are recorded — converting BNB/base
+   * commissions would require guessing a price (AGENTS.md §14/§27). A failed
+   * sweep leaves the provisional "0" in place; reconciliation never blocks on
+   * fees, and the local ledger always converges to this value.
+   */
+  private async applyFillFees(order: BrokerOrder): Promise<void> {
+    if (new Decimal(order.filledQuantity || "0").lte(0)) {
+      return;
+    }
+    try {
+      const trades = await this.client.request<BinanceMyTrade[]>("GET", "/api/v3/myTrades", {
+        symbol: order.symbol,
+        orderId: order.id,
+        limit: "1000",
+      });
+      order.fees = sumCommissionFees(trades, deriveQuoteAsset(order.symbol));
+    } catch {
+      // Fees failed to load; keep the provisional "0".
     }
   }
 
