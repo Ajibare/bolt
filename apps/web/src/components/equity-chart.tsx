@@ -2,12 +2,16 @@
 
 import { ColorType, createChart, LineSeries, type UTCTimestamp } from "lightweight-charts";
 import { useEffect, useRef } from "react";
-import type { BacktestEquityPoint } from "@/lib/backtests";
 
 const GRID_COLOR = "rgba(113,113,122,0.12)";
 const BORDER_COLOR = "rgba(113,113,122,0.25)";
 
-export function EquityChart({ points }: { points: BacktestEquityPoint[] }) {
+export interface EquityPoint {
+  timestamp: number;
+  equity: string;
+}
+
+export function EquityChart({ points }: { points: EquityPoint[] }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {

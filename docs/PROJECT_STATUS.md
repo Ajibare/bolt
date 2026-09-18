@@ -1,6 +1,6 @@
 # Trading Bolt — Project Status
 
-**Last updated:** 2026-09-18 (Phase 9 increment 1: portfolio analytics)
+**Last updated:** 2026-09-18 (Phase 9 increment 2: portfolio analytics UI)
 **Branch:** `main`
 **Last commit:** `95da872` — "update on bolt" (Phase 7 Bot Engine, 2026-09-13)
 
@@ -335,8 +335,14 @@
     curve can be rebuilt without replaying candles (AGENTS.md §13)
   - No schema change (no migration). Unit tests: portfolio-metrics (7), analytics.service (4), repo
     query shape (1) — api package now **288 unit tests** (554 total)
-- Not yet: trade/strategy analytics, performance reports, analytics frontend page (equity chart
-  component already exists and can be reused)
+- Not yet: trade/strategy analytics, performance reports
+- Increment 2: analytics frontend page
+  - New `/analytics` page (JWT-gated): paper-account picker, metric cards (equity, peak equity, total
+    return, max drawdown, realized P&L) and the equity curve rendered with the existing `EquityChart`
+    (`lightweight-charts`); empty state when the user has no paper account
+  - `apps/web/src/lib/analytics.ts` fetcher + `formatMoney`/`formatRatio` helpers; `EquityChart` prop
+    relaxed to a minimal `{ timestamp, equity }` point type so both backtest and portfolio curves
+    share it; dashboard nav link added. Web typecheck/lint/`next build` pass (route `/analytics`)
 
 ---
 
@@ -543,6 +549,7 @@ BullMQ (BotExecutionProcessor)
 | GET    | `/api/brokers`                        | Yes  | List executors (no credentials)      |
 | GET    | `/api/brokers/account`                | Yes  | Live broker account monitor view     |
 | POST   | `/api/brokers/orders/:orderId/cancel` | Yes  | Cancel a live order                  |
+| GET    | `/api/analytics/portfolio/:accountId` | Yes  | Portfolio equity curve + metrics     |
 
 ---
 
@@ -559,6 +566,7 @@ BullMQ (BotExecutionProcessor)
 | `/backtests/[id]` | Backtest detail        | Functional                                                         |
 | `/bots`           | Functional             | Create + lifecycle + monitor + cycle history + live emergency stop |
 | `/live-broker`    | Functional             | Live broker monitor + cancel open orders (polls every 5s)          |
+| `/analytics`      | Functional             | Portfolio equity curve + performance metrics (account picker)      |
 | `/bots/[id]`      | Not implemented        | Detailed single-bot view (optional)                                |
 
 ---
@@ -594,25 +602,31 @@ UI today), re-evaluation of the single-broker-account model (Known Problem #9).
 
 ## Last Completed Task
 
-1. **Phase 9 — Increment 1: portfolio analytics (2026-09-18)** — added the `analytics` module with
+1. **Phase 9 — Increment 2: portfolio analytics UI (2026-09-18)** — added the `/analytics` page
+   (JWT-gated) with a paper-account picker, metric cards (equity, peak equity, total return, max
+   drawdown, realized P&L) and the equity curve rendered through the shared `EquityChart` (prop
+   relaxed to a minimal `{ timestamp, equity }` point type shared with the backtest chart). Added
+   `apps/web/src/lib/analytics.ts` (fetcher + `formatMoney`/`formatRatio`) and a dashboard nav link.
+   Web typecheck/lint/`next build` pass (`/analytics` route emitted); api tests unchanged (554 unit).
+2. **Phase 9 — Increment 1: portfolio analytics (2026-09-18)** — added the `analytics` module with
    `GET /api/analytics/portfolio/:accountId` (JWT-gated, ownership-scoped). Deterministic decimal
    metrics over the immutable equity snapshot curve (`portfolio-metrics.ts`: current/peak equity,
    total return, running-peak max drawdown, 8-dp ratio rounding, zero-start guard) plus
    `PaperPortfolioRepository.listByAccount` (ascending) exported for history rebuild. No migration
    (no schema change). Unit tests: api **288** (metrics 7, service 4, repo 1; 554 total).
-2. **Phase 8 — Increment 11: Binance testnet smoke-test tooling (2026-09-18)** — added
+3. **Phase 8 — Increment 11: Binance testnet smoke-test tooling (2026-09-18)** — added
    `apps/api/scripts/smoke-binance.ts` (`pnpm --filter api smoke:binance`), an adapter-level driver
    that exercises the signed live path end-to-end with one small trade (entry → OCO bracket → myTrades
    fee sweep → flatten), fail-closed against mainnet and insufficient balances, with `--dry-run` /
    `--leave` modes. Lint/format hooks extended to `scripts/`. Not yet executed here (no outbound
    network to testnet).
-3. **Phase 8 — Increment 10: Binance fill-fee accounting (2026-09-18)** — `BinanceAdapter.getOrder`
+4. **Phase 8 — Increment 10: Binance fill-fee accounting (2026-09-18)** — `BinanceAdapter.getOrder`
    sweeps `/api/v3/myTrades` and reports cumulative quote-asset commissions (BNB/base fees excluded,
    never price-guessed). Reconciliation now syncs `paper_orders.fees` from the broker on every
    faithful sweep (not just transitions), and `listPendingLive` includes never-reconciled FILLED
    orders so a market entry's real fees settle on its first sweep; divergent views never touch local
    fees. Unit tests api **275**, broker-adapters **115** (541 total).
-4. **Phase 8 — Increment 9: Binance OCO protective brackets (2026-09-18)** — added the optional
+5. **Phase 8 — Increment 9: Binance OCO protective brackets (2026-09-18)** — added the optional
    `BrokerAdapter.attachProtectiveBracket` contract and a `BinanceAdapter` implementation that submits
    a SELL limit-OCO (`/api/v3/order/oco`, take-profit SELL leg + stop-limit SELL leg, `GTC`,
    `listClientOrderId` idempotency, fail-validated geometry/lot/tick). The Binance create path now
@@ -621,7 +635,7 @@ UI today), re-evaluation of the single-broker-account model (Known Problem #9).
    order-list id via migration 10 (`paper_orders.bracket_order_list_id`); a failed bracket triggers an
    immediate reduce-only reversal so no unprotected position is left open. Unit tests api **271**,
    broker-adapters **104** (524 total).
-5. **Phase 8 — Increment 8: Binance Testnet becomes the primary live broker (2026-09-18)** — added the
+6. **Phase 8 — Increment 8: Binance Testnet becomes the primary live broker (2026-09-18)** — added the
    `@trading-bolt/broker-adapters/src/binance/` module (`BinanceAdapter`, HMAC-SHA256
    `BinanceHttpClient`, REST mappers with step helpers, 14-test spec), `BINANCE_*` env validation
    (default `testnet`; mainnet production-only guard), and reworked `BrokersService` into an
@@ -633,7 +647,7 @@ UI today), re-evaluation of the single-broker-account model (Known Problem #9).
    and the `/bots` page prefers the Binance executor. Unit tests api **266**, broker-adapters **95**
    (512 total); e2e assertions updated (`environment` `'testnet'` when unconfigured, binance executor
    listed).
-6. **Phase 8 — Increment 7: frontend live broker monitor + order controls (2026-09-15)** — added the
+7. **Phase 8 — Increment 7: frontend live broker monitor + order controls (2026-09-15)** — added the
    `/live-broker` page (JWT-gated, 5s polling of `GET /api/brokers/account`): environment badge,
    overview gems (equity/free/open counts), open circuit breakers, balances, positions and open
    orders, with a fail-closed "not configured" empty state and per-surface broker warnings instead
@@ -647,7 +661,7 @@ UI today), re-evaluation of the single-broker-account model (Known Problem #9).
    (`getAccountView`, `cancelLiveOrder`), `lib/bots.ts` `emergencyStopBot`, dashboard + `/bots`
    navigation links. New test: getAccountView local-id enrichment (1) — api **252 unit tests**
    (476 total); e2e **15**; web build passes with the new route.
-7. **Phase 8 — Increment 6: live account monitor + position reconciliation (2026-09-15)** — added
+8. **Phase 8 — Increment 6: live account monitor + position reconciliation (2026-09-15)** — added
    `GET /api/brokers/account` (`LiveAccountController` + `LiveTradingService.getAccountView`): a
    JWT-guarded read-only view of the configured broker (wallet balances + summed equity/free, broker
    positions + open orders, open circuit breakers, per-surface warnings; never credentials; fails
@@ -658,7 +672,7 @@ UI today), re-evaluation of the single-broker-account model (Known Problem #9).
    now returns `ReconciliationRunOutcome` (order + position passes per job). New tests:
    position-reconciliation (10), getAccountView (4) — api **251 unit tests** (475 total); e2e **15**
    (+`GET /api/brokers/account` 200 fail-closed + 401).
-8. **Phase 8 — Increment 5: live order management + emergency controls (2026-09-15)** — added
+9. **Phase 8 — Increment 5: live order management + emergency controls (2026-09-15)** — added
    `POST /api/brokers/orders/:orderId/cancel` (`LiveOrdersController` + `LiveTradingService.cancelOrder`,
    server-side ownership, only `provider='bybit'`, idempotent, status converges via reconciliation) and
    `POST /api/bots/:botId/emergency-stop` (`BotsService.emergencyStop` → `LiveTradingService.emergencyFlatten`:
@@ -669,30 +683,30 @@ UI today), re-evaluation of the single-broker-account model (Known Problem #9).
    and exports `PaperAccountRepository` from `PaperTradingModule`. New tests: breaker persistence/
    hydration, cancel (6), emergency flatten (3), bots emergency-stop (3) — api now 237 unit tests
    (461 total); e2e now 13 (cancel + emergency-stop 401).
-9. **Phase 8 — Increment 4: live bot routing + circuit breaker (2026-09-15)** — added the
-   `live-trading` module (`LiveTradingService`, `CircuitBreakerService`, `LiveAccountRiskTracker`)
-   and wired risk-gated routing into `BotRunnerService` by `ExecutionMode`. Every live order passes
-   `evaluateOrder` + the breaker before reaching the adapter, is persisted as `provider='bybit'`
-   `SUBMITTED`, and enqueues reconciliation. Daily-loss/drawdown breaches trip account+bot breakers
-   (`CircuitBreakerOpenError` → bot ERROR, no auto-resume); reduce-only exits never block. Bot
-   creation gate now requires a configured broker AND a mode↔environment match. Extracted
-   `ReconciliationProducer` (shared by scheduler + live placement). 27 new unit tests (breaker 9,
-   live-trading 10, bots gate 5, runner routing 3); api now 223 unit tests; 447 total + 11 e2e.
-10. **Phase 8 — Increment 3: order reconciliation engine (2026-09-15)** — added
+10. **Phase 8 — Increment 4: live bot routing + circuit breaker (2026-09-15)** — added the
+    `live-trading` module (`LiveTradingService`, `CircuitBreakerService`, `LiveAccountRiskTracker`)
+    and wired risk-gated routing into `BotRunnerService` by `ExecutionMode`. Every live order passes
+    `evaluateOrder` + the breaker before reaching the adapter, is persisted as `provider='bybit'`
+    `SUBMITTED`, and enqueues reconciliation. Daily-loss/drawdown breaches trip account+bot breakers
+    (`CircuitBreakerOpenError` → bot ERROR, no auto-resume); reduce-only exits never block. Bot
+    creation gate now requires a configured broker AND a mode↔environment match. Extracted
+    `ReconciliationProducer` (shared by scheduler + live placement). 27 new unit tests (breaker 9,
+    live-trading 10, bots gate 5, runner routing 3); api now 223 unit tests; 447 total + 11 e2e.
+11. **Phase 8 — Increment 3: order reconciliation engine (2026-09-15)** — added
     `OrderReconciliationService` (reads pending `provider='bybit'` non-terminal orders, probes the
     broker with `getOrder`, copies fills verbatim, fails orders missing at the broker, logs
     terminal/open or identity divergences without overwriting), a `order-reconciliation` BullMQ
     processor + 30s periodic scheduler (live-only), scoped sweeps, and a `listPendingLive`
     repository query. `ReconciliationJob`/`ReconciliationOutcome` types added to the shared package.
     9 unit tests; no live routing yet at the time.
-11. **Phase 8 — Increment 2: API brokers module + env-backed registry (2026-09-15)** — added
+12. **Phase 8 — Increment 2: API brokers module + env-backed registry (2026-09-15)** — added
     `BrokersModule`/`BrokersService` (registry over `PaperBroker` + `BybitAdapter`, lazy adapter
     construction, no credentials ever exposed) and JWT-guarded `GET /api/brokers`. Env validation
     hardens `BYBIT_*`: `BYBIT_ENVIRONMENT` enum (`demo|testnet|mainnet`, default `demo`) and a
     super-refined key/secret pair rule (partial pairs refuse boot). Migration 8
     (`AddBrokerReconciliation`, applied) adds `provider`/`broker_status`/`last_synced_at` to
     `paper_orders` as reconciliation groundwork. 13 new unit tests (env.validation 7, brokers.service 6) + 2 e2e tests.
-12. **Phase 8 — Increment 1: `BybitAdapter` (2026-09-15)** — built the Bybit v5 adapter in
+13. **Phase 8 — Increment 1: `BybitAdapter` (2026-09-15)** — built the Bybit v5 adapter in
     `@trading-bolt/broker-adapters` behind the existing `BrokerAdapter` abstraction: signed REST
     client (HMAC-SHA256, injectable `FetchLike` transport, no runtime deps added), order
     place/cancel/get/list, positions and unified wallet mapping, strict order-status mapping with
@@ -702,7 +716,7 @@ UI today), re-evaluation of the single-broker-account model (Known Problem #9).
     `apiKey`/`apiSecret` required, `environment` defaults to `demo`. 38 new unit tests (adapter 14,
     mappers 24); broker-adapters package now 73. Real smoke test deferred until demo credentials
     arrive (mock-only for now).
-13. **Persisted per-cycle signals/orders + bot-cycle E2E (2026-09-15)** — added `bot_run_cycles`
+14. **Persisted per-cycle signals/orders + bot-cycle E2E (2026-09-15)** — added `bot_run_cycles`
     (entity, migration 7, repository), wired the bot runner to persist one record per tick
     (signal, order, rejection, or error; success and failure paths), exposed
     `GET /api/bots/:botId/runs/:runId/cycles` with ownership enforcement, surfaced cycles in the
@@ -710,13 +724,13 @@ UI today), re-evaluation of the single-broker-account model (Known Problem #9).
     1 bot-cycle TP regression test, and wrote an end-to-end test that drives a real bot + BullMQ
     worker through the HTTP API against live Postgres/Redis with a deterministic stub market data
     provider (buys the annotated cross on the last bar). **9/9 E2E tests and 371 unit tests pass.**
-14. **Fixed three latent defects surfaced by the new E2E** — (a) `MarketsService.getCandles`
+15. **Fixed three latent defects surfaced by the new E2E** — (a) `MarketsService.getCandles`
     returned newest-first rows to strategies/backtests/charts (cache path), fixed to chronological;
     (b) BullMQ `jobId` contained `:`, which BullMQ forbids — any bot start tick would fail;
     (c) `decimalTransformer.from` turned `NULL` money columns into the string `"null"`, crashing
     bots without take-profit with `[DecimalError] Invalid argument: null`. All three are now unit- and
     E2E-covered. Migration `1700000000007` applied to the live database.
-15. **JWT-guarded the backtests API (2026-09-15)** — closed the auth inconsistency flagged in
+16. **JWT-guarded the backtests API (2026-09-15)** — closed the auth inconsistency flagged in
     Known Problems #3 (see above).
 
 ---
@@ -738,17 +752,14 @@ GET /api/ready     ✅  database:ok, redis:ok, queue:ok (live boot)
 
 ## Recommended Next Task
 
-**Phase 8 — Increment 8: bot creation execution-mode selector + hi-lo live bot smoke hardening.**
+**Phase 9 — Increment 3: trade/strategy analytics.**
 
-1. Web: add an execution-mode selector (PAPER / DEMO / TESTNET / LIVE) to the bot creation form with
-   server-side rule hints (a live-capable mode requires a fully configured broker and a
-   mode↔environment match); surface the bot's mode clearly in the `/bots` list beside the existing
-   paper-account binding. The backend gate already exists and stays authoritative (AGENTS.md §11/§23).
-2. Real demo/testnet smoke test once the user provides demo credentials — now that create/order/
-   cancel/emergency-stop/fill-convergence/account-monitor/position-reconciliation and the monitor UI
-   are all wired, one real demo run closes the loop and validates the broker adapter un-mocked for
-   the first time ("honest values, never guesses").
-3. Re-examine the single-broker-account model (Known Problem #9) as a separate design task.
+1. Extend the analytics module with trade-level metrics derived from the paper order ledger: win rate,
+   average win/loss, profit factor and trade count per account (and optionally per strategy/bot),
+   computed with the same pure decimal helpers and covered by unit tests.
+2. Then strategy/performance reports (per-bot performance over time) and any remaining Phase 9 items.
+3. Separately: execute `smoke:binance` against Binance Testnet from a networked machine once available
+   — this remains the only unverified live path (Phase 8).
 
 ---
 
