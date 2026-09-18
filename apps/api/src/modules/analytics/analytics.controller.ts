@@ -28,4 +28,12 @@ export class AnalyticsController {
   ) {
     return this.analytics.portfolioAnalytics(user.id, accountId);
   }
+
+  @Get('trades/:accountId')
+  trades(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('accountId', new ParseUUIDPipe({ version: '4' })) accountId: string,
+  ) {
+    return this.analytics.tradeAnalytics(user.id, accountId);
+  }
 }

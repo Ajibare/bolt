@@ -14,8 +14,15 @@ function makeService() {
   const portfolios = {
     listByAccount: vi.fn(),
   };
-  const service = new AnalyticsService(accounts as never, portfolios as never);
-  return { service, accounts, portfolios };
+  const orders = {
+    listFilledByAccount: vi.fn(),
+  };
+  const service = new AnalyticsService(
+    accounts as never,
+    portfolios as never,
+    orders as never,
+  );
+  return { service, accounts, portfolios, orders };
 }
 
 function accountFor(
@@ -118,5 +125,86 @@ describe('AnalyticsService.portfolioAnalytics', () => {
     expect(result.maxDrawdown).toBe('0.00000000');
     expect(result.lastPositionValue).toBe('0');
     expect(result.equityCurve).toEqual([]);
+  });
+});
+
+describe('AnalyticsService.tradeAnalytics', () => {
+  function filledOrder(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'order-1',
+      accountId: 'acc-1',
+      clientOrderId: 'c-1',
+      brokerOrderId: null,
+      provider: 'paper',
+      brokerStatus: null,
+      bracketOrderListId: null,
+      lastSyncedAt: null,
+      side: 'buy',
+      type: 'market',
+      symbol: 'BTCUSDT',
+      quantity: '1',
+      price: null,
+      stopLoss: null,
+      takeProfit: null,
+      reduceOnly: false,
+      feeRate: '0',
+      slippageRate: '0',
+      status: 'FILLED',
+      filledQuantity: '1',
+      avgFillPrice: '100',
+      fees: '0',
+      reason: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+      ...overrides,
+    };
+  }
+
+  it('rejects an account that does not belong to the requesting user', async () => {
+    const { service, accounts, orders } = makeService();
+    accounts.findByUserIdAndId.mockResolvedValue(null);
+
+    await expect(
+      service.tradeAnalytics('user-1', 'acc-1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(orders.listFilledByAccount).not.toHaveBeenCalled();
+  });
+
+  it('rebuilds FIFO round trips and aggregates them', async () => {
+    const { service, accounts, orders } = makeService();
+    accounts.findByUserIdAndId.mockResolvedValue(accountFor());
+    orders.listFilledByAccount.mockResolvedValue([
+      filledOrder({ side: 'buy', filledQuantity: '1', avgFillPrice: '100' }),
+      filledOrder({
+        id: 'order-2',
+        side: 'sell',
+        filledQuantity: '1',
+        avgFillPrice: '110',
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+      }),
+    ]);
+
+    const result = await service.tradeAnalytics('user-1', 'acc-1');
+
+    expect(orders.listFilledByAccount).toHaveBeenCalledWith('acc-1', 5000);
+    expect(result.accountId).toBe('acc-1');
+    expect(result.metrics.tradeCount).toBe(1);
+    expect(result.metrics.winCount).toBe(1);
+    expect(result.metrics.netPnl).toBe('10.00000000');
+    expect(result.trades).toHaveLength(1);
+    expect(result.trades[0].direction).toBe('long');
+    expect(result.trades[0].exitPrice).toBe('110');
+  });
+
+  it('returns empty metrics when the account has no filled orders', async () => {
+    const { service, accounts, orders } = makeService();
+    accounts.findByUserIdAndId.mockResolvedValue(accountFor());
+    orders.listFilledByAccount.mockResolvedValue([]);
+
+    const result = await service.tradeAnalytics('user-1', 'acc-1');
+
+    expect(result.metrics.tradeCount).toBe(0);
+    expect(result.metrics.profitFactor).toBeNull();
+    expect(result.trades).toEqual([]);
   });
 });

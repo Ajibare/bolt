@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LIVE_ORDER_PROVIDERS } from '@trading-bolt/shared';
-import { In, IsNull, Repository } from 'typeorm';
+import { In, IsNull, MoreThan, Repository } from 'typeorm';
 import {
   PaperAccountEntity,
   PaperOrderEntity,
@@ -83,6 +83,17 @@ export class TypeOrmPaperOrderRepository extends PaperOrderRepository {
       },
       order: { createdAt: 'DESC' },
       take: options?.limit,
+    });
+  }
+
+  listFilledByAccount(
+    accountId: string,
+    limit?: number,
+  ): Promise<PaperOrderEntity[]> {
+    return this.repo.find({
+      where: { accountId, filledQuantity: MoreThan('0') },
+      order: { createdAt: 'ASC' },
+      take: limit,
     });
   }
 

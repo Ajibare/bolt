@@ -44,6 +44,16 @@ export abstract class PaperOrderRepository {
   ): Promise<PaperOrderEntity[]>;
 
   /**
+   * Orders that have any filled quantity (including partial fills on
+   * cancelled orders), in ascending time order. Used to rebuild round-trip
+   * trades FIFO for performance analytics.
+   */
+  abstract listFilledByAccount(
+    accountId: string,
+    limit?: number,
+  ): Promise<PaperOrderEntity[]>;
+
+  /**
    * Live-provider orders that still need a broker sync (AGENTS.md §17):
    * non-terminal orders plus any FILLED order not yet reconciled (whose fill
    * fees settle on that first sweep).
