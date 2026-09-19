@@ -10,7 +10,6 @@ import type {
   BotTickAction,
   BotTickJob,
 } from '@trading-bolt/shared';
-import type { RiskConfig } from '@trading-bolt/risk-engine';
 import {
   createStrategy,
   InvalidStrategyConfigError,
@@ -31,6 +30,7 @@ import {
   BotRunRepository,
 } from './bot.repository.js';
 import { buildCycleIntent } from './bot-cycle.js';
+import { applyBotRiskPolicy } from './bot-risk-policy.js';
 import { transition } from './bot-lifecycle.js';
 import { intervalToMs } from './bot-timing.js';
 import { BotScheduler } from './bot-scheduler.js';
@@ -264,6 +264,8 @@ export class BotRunnerService {
         ? `${run.id}:${signalTimestamp}`
         : `bolt-${run.id.slice(0, 8)}-${signalTimestamp}`;
 
+    const riskConfig = applyBotRiskPolicy(bot.riskConfig);
+
     try {
       const order =
         bot.executionMode === 'PAPER'
@@ -280,7 +282,7 @@ export class BotRunnerService {
                 reduceOnly: intent.reduceOnly,
                 clientOrderId,
               } as PlacePaperOrderDto,
-              bot.riskConfig as Partial<RiskConfig>,
+              riskConfig,
               { botId: bot.id, botRunId: run.id },
             )
           : await this.liveTrading.placeOrder({
@@ -295,7 +297,7 @@ export class BotRunnerService {
               takeProfit: intent.takeProfit,
               reduceOnly: intent.reduceOnly,
               clientOrderId,
-              riskConfig: bot.riskConfig as Partial<RiskConfig>,
+              riskConfig,
             });
       bot.lastOrderId = order.id;
       bot.lastOrderStatus = order.status;

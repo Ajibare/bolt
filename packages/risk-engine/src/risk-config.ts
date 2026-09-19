@@ -1,5 +1,5 @@
 import type { Decimal } from "decimal.js";
-import { toDecimal } from "@trading-bolt/shared";
+import { toDecimal, type Money } from "@trading-bolt/shared";
 import type { RiskConfig, RiskSide, TradingSession } from "./types.js";
 import { InvalidRiskConfigError } from "./errors.js";
 
@@ -25,6 +25,7 @@ export const DEFAULT_RISK_CONFIG: Readonly<
 };
 
 const SIDES: readonly RiskSide[] = ["buy", "sell"];
+const MINUTES_PER_DAY = 1440;
 
 function isFraction(value: Decimal, allowOne: boolean): boolean {
   return value.gt(0) && (allowOne ? value.lte(1) : value.lt(1));
@@ -142,5 +143,99 @@ export function validateRiskConfig(config: Partial<RiskConfig> | undefined): Ris
     allowedSymbols,
     allowedSides,
     tradingSession: validateTradingSession(config.tradingSession),
+  };
+}
+
+function takeMin(a: Money, b: Money): Money {
+  return toDecimal(a).lte(toDecimal(b)) ? a : b;
+}
+
+function intersectValues<T>(requested: T[] | null, ceiling: T[] | null, label: string): T[] | null {
+  if (ceiling === null) {
+    return requested === null ? null : [...requested];
+  }
+  if (requested === null) {
+    return [...ceiling];
+  }
+  const allowed = requested.filter((value) => ceiling.includes(value));
+  if (allowed.length === 0) {
+    throw new InvalidRiskConfigError(`${label} has no overlap with the server risk policy`);
+  }
+  return allowed;
+}
+
+function sessionCovers(session: TradingSession, minute: number): boolean {
+  return session.startMinutes <= session.endMinutes
+    ? minute >= session.startMinutes && minute <= session.endMinutes
+    : minute >= session.startMinutes || minute <= session.endMinutes;
+}
+
+function sessionWithin(requested: TradingSession, ceiling: TradingSession): boolean {
+  const span =
+    requested.startMinutes <= requested.endMinutes
+      ? requested.endMinutes - requested.startMinutes
+      : MINUTES_PER_DAY - requested.startMinutes + requested.endMinutes;
+  for (let offset = 0; offset <= span; offset += 1) {
+    const minute = (requested.startMinutes + offset) % MINUTES_PER_DAY;
+    if (!sessionCovers(ceiling, minute)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function constrainTradingSession(
+  requested: TradingSession | null,
+  ceiling: TradingSession | null,
+): TradingSession | null {
+  if (ceiling === null) {
+    return requested === null ? null : { ...requested };
+  }
+  if (requested === null) {
+    return { ...ceiling };
+  }
+  if (!sessionWithin(requested, ceiling)) {
+    throw new InvalidRiskConfigError("tradingSession must fall within the server trading window");
+  }
+  return { ...requested };
+}
+
+/**
+ * Clamps a caller-supplied risk config against a server-owned ceiling so a
+ * client can only ever tighten policy, never loosen it (AGENTS.md §18). Scalars
+ * take the stricter bound, requirement booleans are OR-ed, list restrictions are
+ * intersected, and a trading window must fit inside the server window. Values
+ * omitted by the caller inherit the ceiling. Throws InvalidRiskConfigError when
+ * the request is malformed or conflicts irreconcilably with the ceiling.
+ */
+export function constrainRiskConfig(
+  requested: Partial<RiskConfig> | undefined,
+  ceiling: RiskConfig,
+): RiskConfig {
+  const policy = validateRiskConfig(ceiling);
+  if (requested === undefined || requested === null) {
+    return {
+      ...policy,
+      allowedSymbols: policy.allowedSymbols ? [...policy.allowedSymbols] : null,
+      allowedSides: policy.allowedSides ? [...policy.allowedSides] : null,
+      tradingSession: policy.tradingSession ? { ...policy.tradingSession } : null,
+    };
+  }
+
+  const wanted = validateRiskConfig(requested);
+  return {
+    maxRiskPerTrade: takeMin(wanted.maxRiskPerTrade, policy.maxRiskPerTrade),
+    maxPositionSize: takeMin(wanted.maxPositionSize, policy.maxPositionSize),
+    maxExposure: takeMin(wanted.maxExposure, policy.maxExposure),
+    maxOpenPositions: Math.min(wanted.maxOpenPositions, policy.maxOpenPositions),
+    maxDailyLoss: takeMin(wanted.maxDailyLoss, policy.maxDailyLoss),
+    maxDrawdown: takeMin(wanted.maxDrawdown, policy.maxDrawdown),
+    requireStopLoss: wanted.requireStopLoss || policy.requireStopLoss,
+    requireTakeProfit: wanted.requireTakeProfit || policy.requireTakeProfit,
+    maxStopLossDistance: takeMin(wanted.maxStopLossDistance, policy.maxStopLossDistance),
+    maxTakeProfitDistance: takeMin(wanted.maxTakeProfitDistance, policy.maxTakeProfitDistance),
+    allowedSymbols: intersectValues(wanted.allowedSymbols, policy.allowedSymbols, "allowedSymbols"),
+    allowedSides: intersectValues(wanted.allowedSides, policy.allowedSides, "allowedSides"),
+    tradingSession: constrainTradingSession(wanted.tradingSession, policy.tradingSession),
   };
 }

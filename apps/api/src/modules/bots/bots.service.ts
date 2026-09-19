@@ -10,7 +10,7 @@ import {
   InvalidStrategyConfigError,
   StrategyNotFoundError,
 } from '@trading-bolt/trading-engine';
-import { validateRiskConfig, type RiskConfig } from '@trading-bolt/risk-engine';
+import { InvalidRiskConfigError } from '@trading-bolt/risk-engine';
 import { BrokersService } from '../brokers/brokers.service.js';
 import { LiveTradingService } from '../live-trading/live-trading.service.js';
 import { PaperTradingService } from '../paper-trading/paper-trading.service.js';
@@ -26,6 +26,7 @@ import {
   BotRunRepository,
 } from './bot.repository.js';
 import { canStart, transition } from './bot-lifecycle.js';
+import { applyBotRiskPolicy } from './bot-risk-policy.js';
 import { BotScheduler } from './bot-scheduler.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 
@@ -86,15 +87,7 @@ export class BotsService {
   async create(userId: string, dto: CreateBotDto): Promise<BotEntity> {
     this.assertExecutionModeAllowed(dto.executionMode);
     this.validateStrategy(dto.strategyId, dto.config);
-    if (dto.riskConfig !== undefined) {
-      try {
-        validateRiskConfig(dto.riskConfig as Partial<RiskConfig>);
-      } catch (error) {
-        throw new BadRequestException(
-          `Invalid risk configuration: ${(error as Error).message}`,
-        );
-      }
-    }
+    const riskConfig = this.resolveRiskPolicy(dto.riskConfig);
     this.validatePercentage('stopLossPercent', dto.stopLossPercent);
     if (dto.takeProfitPercent !== undefined) {
       this.validatePercentage('takeProfitPercent', dto.takeProfitPercent);
@@ -112,7 +105,7 @@ export class BotsService {
     bot.config = dto.config;
     bot.symbol = dto.symbol;
     bot.interval = dto.interval;
-    bot.riskConfig = dto.riskConfig ?? {};
+    bot.riskConfig = riskConfig;
     bot.paperAccountId = dto.paperAccountId;
     bot.executionMode = dto.executionMode as BotEntity['executionMode'];
     bot.status = 'DRAFT';
@@ -410,6 +403,22 @@ export class BotsService {
       throw new BadRequestException(
         `${label} must be a fraction strictly between 0 and 1 (0.01 = 1%)`,
       );
+    }
+  }
+
+  private resolveRiskPolicy(
+    requested: Record<string, unknown> | undefined,
+  ): Record<string, unknown> {
+    try {
+      const policy = applyBotRiskPolicy(requested);
+      return Object.fromEntries(Object.entries(policy));
+    } catch (error) {
+      if (error instanceof InvalidRiskConfigError) {
+        throw new BadRequestException(
+          `Invalid risk configuration: ${error.message}`,
+        );
+      }
+      throw error;
     }
   }
 }

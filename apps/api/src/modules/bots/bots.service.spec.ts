@@ -142,6 +142,32 @@ describe('BotsService.create execution-mode gate', () => {
   });
 });
 
+describe('BotsService.create risk policy', () => {
+  it('clamps a looser client risk config to the server policy', async () => {
+    const { service } = createService({});
+    const created = await service.create('user-1', {
+      ...dto('PAPER'),
+      riskConfig: { maxRiskPerTrade: '0.9', maxOpenPositions: 999 },
+    } as never);
+
+    expect(created.riskConfig).toMatchObject({
+      maxRiskPerTrade: '0.01',
+      maxOpenPositions: 10,
+      requireStopLoss: true,
+    });
+  });
+
+  it('rejects a malformed risk config', async () => {
+    const { service } = createService({});
+    await expect(
+      service.create('user-1', {
+        ...dto('PAPER'),
+        riskConfig: { maxRiskPerTrade: '2' },
+      } as never),
+    ).rejects.toThrow(BadRequestException);
+  });
+});
+
 describe('BotsService.emergencyStop', () => {
   it('stops a PAPER bot without touching the live broker', async () => {
     const { service, bots, runs, liveTrading } = createService({});

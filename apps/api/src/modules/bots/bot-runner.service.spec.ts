@@ -259,7 +259,13 @@ describe('BotRunnerService', () => {
       reduceOnly: false,
       clientOrderId: 'run-1:1234567890000',
     });
-    expect(riskConfig).toEqual(entity.riskConfig);
+    expect(riskConfig).toMatchObject({
+      maxRiskPerTrade: '0.01',
+      maxPositionSize: '0.1',
+      maxOpenPositions: 10,
+      requireStopLoss: true,
+    });
+    expect(riskConfig).not.toBe(entity.riskConfig);
     expect(entity.lastSignalDirection).toBe('buy');
     expect(entity.lastOrderId).toBe('order-1');
     expect(entity.lastOrderStatus).toBe('FILLED');
