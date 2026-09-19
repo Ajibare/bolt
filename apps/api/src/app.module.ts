@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { validateEnv } from './config/env.validation.js';
+import { ENV_FILE_PATHS } from './config/env.load.js';
 import { HealthModule } from './health/health.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { MarketsModule } from './modules/markets/markets.module.js';
@@ -21,6 +22,7 @@ import { RedisModule } from './redis/redis.module.js';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: ENV_FILE_PATHS,
       validate: validateEnv,
     }),
     TypeOrmModule.forRootAsync({

@@ -16,7 +16,6 @@ export const DEFAULTS = {
 export const QUEUE_NAMES = {
   smoke: "smoke",
   marketData: "market-data",
-  backtesting: "backtesting",
   botExecution: "bot-execution",
   orderReconciliation: "order-reconciliation",
   notifications: "notifications",
@@ -28,7 +27,6 @@ export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
 export const SMOKE_QUEUE = QUEUE_NAMES.smoke;
 export const MARKET_DATA_QUEUE = QUEUE_NAMES.marketData;
-export const BACKTESTING_QUEUE = QUEUE_NAMES.backtesting;
 export const BOT_EXECUTION_QUEUE = QUEUE_NAMES.botExecution;
 export const ORDER_RECONCILIATION_QUEUE = QUEUE_NAMES.orderReconciliation;
 export const NOTIFICATIONS_QUEUE = QUEUE_NAMES.notifications;

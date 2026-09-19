@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { UsersModule } from '../users/users.module.js';
 import { NotificationEntity } from './notification.entity.js';
 import { NotificationRepository } from './notification.repository.js';
 import { TypeOrmNotificationRepository } from './typeorm-notification.repository.js';
@@ -12,7 +13,7 @@ import { NotificationsService } from './notifications.service.js';
  * without a circular dependency.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([NotificationEntity])],
+  imports: [TypeOrmModule.forFeature([NotificationEntity]), UsersModule],
   controllers: [NotificationsController],
   providers: [
     NotificationsService,

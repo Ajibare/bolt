@@ -1,5 +1,27 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Worker } from "bullmq";
 import { SMOKE_QUEUE } from "@trading-bolt/shared";
+
+function loadEnv(): void {
+  const candidates = [
+    path.resolve(".env"),
+    fileURLToPath(new URL("../../.env", import.meta.url)),
+    fileURLToPath(new URL("../../../.env", import.meta.url)),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      try {
+        process.loadEnvFile(candidate);
+      } catch {
+        // ignore unparsable candidates; process.env may already be set
+      }
+    }
+  }
+}
+
+loadEnv();
 
 const REDIS_URL = process.env.REDIS_URL;
 

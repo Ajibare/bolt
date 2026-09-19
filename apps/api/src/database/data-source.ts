@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { validateEnv } from '../config/env.validation.js';
+import { CreateAppMeta1700000000000 } from './migrations/1700000000000-CreateAppMeta.js';
 import { CreateUsers1700000000001 } from './migrations/1700000000001-CreateUsers.js';
 import { CreateSessions1700000000002 } from './migrations/1700000000002-CreateSessions.js';
 import { CreateMarketCandles1700000000003 } from './migrations/1700000000003-CreateMarketCandles.js';
@@ -30,6 +31,7 @@ export function buildDataSource(
     url: config.DATABASE_URL,
     entities: [],
     migrations: [
+      CreateAppMeta1700000000000,
       CreateUsers1700000000001,
       CreateSessions1700000000002,
       CreateMarketCandles1700000000003,

@@ -1,7 +1,8 @@
-import 'dotenv/config';
+import { loadEnvFile } from '../config/env.load.js';
 import { buildDataSource } from './data-source.js';
 
 async function main(): Promise<void> {
+  loadEnvFile();
   const dataSource = buildDataSource();
   await dataSource.initialize();
   try {
