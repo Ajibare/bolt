@@ -208,3 +208,148 @@ describe('AnalyticsService.tradeAnalytics', () => {
     expect(result.trades).toEqual([]);
   });
 });
+
+describe('AnalyticsService.performanceReport', () => {
+  function filledOrder(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'order-1',
+      accountId: 'acc-1',
+      clientOrderId: 'c-1',
+      brokerOrderId: null,
+      provider: 'paper',
+      brokerStatus: null,
+      bracketOrderListId: null,
+      lastSyncedAt: null,
+      side: 'buy',
+      type: 'market',
+      symbol: 'BTCUSDT',
+      quantity: '1',
+      price: null,
+      stopLoss: null,
+      takeProfit: null,
+      reduceOnly: false,
+      feeRate: '0',
+      slippageRate: '0',
+      status: 'FILLED',
+      filledQuantity: '1',
+      avgFillPrice: '100',
+      fees: '0',
+      reason: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+      ...overrides,
+    };
+  }
+
+  it('rejects an account that does not belong to the requesting user', async () => {
+    const { service, accounts, portfolios, orders } = makeService();
+    accounts.findByUserIdAndId.mockResolvedValue(null);
+
+    await expect(
+      service.performanceReport('user-1', 'acc-1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(portfolios.listByAccount).not.toHaveBeenCalled();
+    expect(orders.listFilledByAccount).not.toHaveBeenCalled();
+  });
+
+  it('combines portfolio + trade metrics with daily period returns', async () => {
+    const { service, accounts, portfolios, orders } = makeService();
+    accounts.findByUserIdAndId.mockResolvedValue(accountFor());
+    portfolios.listByAccount.mockResolvedValue([
+      snapshotFor({
+        equity: '1000',
+        positionValue: '300',
+        createdAt: new Date('2026-01-01T09:00:00Z'),
+      }),
+      snapshotFor({
+        id: 'snap-2',
+        equity: '1100',
+        positionValue: '400',
+        realizedPnl: '60',
+        createdAt: new Date('2026-01-02T09:00:00Z'),
+      }),
+    ]);
+    orders.listFilledByAccount.mockResolvedValue([
+      filledOrder({ side: 'buy', filledQuantity: '1', avgFillPrice: '100' }),
+      filledOrder({
+        id: 'order-2',
+        side: 'sell',
+        filledQuantity: '1',
+        avgFillPrice: '110',
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+      }),
+    ]);
+
+    const result = await service.performanceReport('user-1', 'acc-1');
+
+    expect(result.accountId).toBe('acc-1');
+    expect(result.portfolio.currentEquity).toBe('1100');
+    expect(result.portfolio.totalReturn).toBe('0.10000000');
+    expect(result.trades.metrics.tradeCount).toBe(1);
+    expect(result.trades.metrics.netPnl).toBe('10.00000000');
+
+    expect(result.periodReturns.daily).toHaveLength(2);
+    expect(result.periodReturns.daily[0]).toMatchObject({
+      label: '2026-01-01',
+      startingEquity: '1000',
+      endingEquity: '1000',
+      returnPercent: '0.00000000',
+    });
+    expect(result.periodReturns.daily[1]).toMatchObject({
+      label: '2026-01-02',
+      startingEquity: '1000',
+      endingEquity: '1100',
+      returnPercent: '0.10000000',
+    });
+    expect(result.periodReturns.weekly[0].endingEquity).toBe('1100');
+    expect(result.periodReturns.monthly[0].endingEquity).toBe('1100');
+  });
+});
+
+describe('AnalyticsService.performanceReportCsv', () => {
+  it('rejects an account that does not belong to the requesting user', async () => {
+    const { service, accounts, portfolios, orders } = makeService();
+    accounts.findByUserIdAndId.mockResolvedValue(null);
+
+    await expect(
+      service.performanceReportCsv('user-1', 'acc-1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(portfolios.listByAccount).not.toHaveBeenCalled();
+    expect(orders.listFilledByAccount).not.toHaveBeenCalled();
+  });
+
+  it('renders the report as a CSV with a stable filename', async () => {
+    const { service, accounts, portfolios, orders } = makeService();
+    accounts.findByUserIdAndId.mockResolvedValue(accountFor());
+    portfolios.listByAccount.mockResolvedValue([
+      snapshotFor({
+        equity: '1000',
+        positionValue: '300',
+        createdAt: new Date('2026-01-01T09:00:00Z'),
+      }),
+      snapshotFor({
+        id: 'snap-2',
+        equity: '1100',
+        positionValue: '400',
+        realizedPnl: '60',
+        createdAt: new Date('2026-01-02T09:00:00Z'),
+      }),
+    ]);
+    orders.listFilledByAccount.mockResolvedValue([]);
+
+    const result = await service.performanceReportCsv('user-1', 'acc-1');
+
+    expect(result.filename).toBe('performance-acc-1.csv');
+    const lines = result.csv.trim().split('\n');
+    expect(lines[0]).toBe('metric,value');
+    expect(lines).toContain('equity,1100');
+    expect(lines).toContain('trades,0');
+    expect(lines).toContain('day,2026-01-01,1000,1000,0.00000000,0.00000000,1');
+    expect(lines).toContain(
+      'day,2026-01-02,1000,1100,0.10000000,100.00000000,1',
+    );
+    expect(lines[lines.length - 1]).toBe(
+      'month,2026-01,1000,1100,0.10000000,100.00000000,2',
+    );
+  });
+});

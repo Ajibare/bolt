@@ -5,12 +5,15 @@ import {
   PaperOrderRepository,
   PaperPortfolioRepository,
 } from '../paper-trading/paper-trading.repository.js';
+import type { PaperAccountEntity } from '../paper-trading/entities/paper-trading.entity.js';
 import {
   equityCurve,
   metricsFromCurve,
   type EquityCurvePoint,
   type PortfolioMetrics,
 } from './portfolio-metrics.js';
+import { periodReturns, type PeriodReturn } from './performance-report.js';
+import { performanceReportToCsv } from './performance-export.js';
 import {
   reconstructTrades,
   summarizeTrades,
@@ -51,6 +54,18 @@ export interface TradeAnalytics {
   trades: RoundTripTrade[];
 }
 
+/** Per-period performance breakdown over the account equity curve. */
+export interface PerformanceReport {
+  accountId: string;
+  portfolio: PortfolioAnalytics;
+  trades: TradeAnalytics;
+  periodReturns: {
+    daily: PeriodReturn[];
+    weekly: PeriodReturn[];
+    monthly: PeriodReturn[];
+  };
+}
+
 @Injectable()
 export class AnalyticsService {
   constructor(
@@ -63,12 +78,78 @@ export class AnalyticsService {
     userId: string,
     accountId: string,
   ): Promise<PortfolioAnalytics> {
+    const account = await this.findAccount(userId, accountId);
+    return this.portfolioFor(account);
+  }
+
+  /**
+   * Rebuilds closed round-trip trades FIFO from the account's filled orders
+   * and aggregates them. Ownership is enforced before any ledger read.
+   */
+  async tradeAnalytics(
+    userId: string,
+    accountId: string,
+  ): Promise<TradeAnalytics> {
+    const account = await this.findAccount(userId, accountId);
+    return this.tradesFor(account);
+  }
+
+  /**
+   * Single-payload performance report combining the portfolio metrics, the
+   * FIFO trade metrics and per-period (day/week/month) equity returns.
+   * Ownership is enforced once up front.
+   */
+  async performanceReport(
+    userId: string,
+    accountId: string,
+  ): Promise<PerformanceReport> {
+    const account = await this.findAccount(userId, accountId);
+    const portfolio = await this.portfolioFor(account);
+    const trades = await this.tradesFor(account);
+    const curve = portfolio.equityCurve;
+
+    return {
+      accountId: account.id,
+      portfolio,
+      trades,
+      periodReturns: {
+        daily: periodReturns(curve, 'day'),
+        weekly: periodReturns(curve, 'week'),
+        monthly: periodReturns(curve, 'month'),
+      },
+    };
+  }
+
+  /**
+   * Renders the performance report as a downloadable CSV (read-only). Reuses
+   * the same ownership-scoped loaders as performanceReport.
+   */
+  async performanceReportCsv(
+    userId: string,
+    accountId: string,
+  ): Promise<{ filename: string; csv: string }> {
+    const report = await this.performanceReport(userId, accountId);
+    return {
+      filename: `performance-${report.accountId}.csv`,
+      csv: performanceReportToCsv(report),
+    };
+  }
+
+  private async findAccount(
+    userId: string,
+    accountId: string,
+  ): Promise<PaperAccountEntity> {
     const account = await this.accounts.findByUserIdAndId(userId, accountId);
     if (!account) {
       throw new NotFoundException('Paper account not found');
     }
+    return account;
+  }
 
-    const snapshots = await this.portfolios.listByAccount(accountId);
+  private async portfolioFor(
+    account: PaperAccountEntity,
+  ): Promise<PortfolioAnalytics> {
+    const snapshots = await this.portfolios.listByAccount(account.id);
     const curve = equityCurve(snapshots);
     const metrics: PortfolioMetrics = metricsFromCurve(
       curve,
@@ -89,21 +170,11 @@ export class AnalyticsService {
     };
   }
 
-  /**
-   * Rebuilds closed round-trip trades FIFO from the account's filled orders
-   * and aggregates them. Ownership is enforced before any ledger read.
-   */
-  async tradeAnalytics(
-    userId: string,
-    accountId: string,
+  private async tradesFor(
+    account: PaperAccountEntity,
   ): Promise<TradeAnalytics> {
-    const account = await this.accounts.findByUserIdAndId(userId, accountId);
-    if (!account) {
-      throw new NotFoundException('Paper account not found');
-    }
-
     const orders = await this.orders.listFilledByAccount(
-      accountId,
+      account.id,
       ORDER_LOOKBACK_LIMIT,
     );
     const trades = reconstructTrades(orders);

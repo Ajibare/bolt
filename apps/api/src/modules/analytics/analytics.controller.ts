@@ -3,6 +3,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import type { AuthenticatedUser } from '@trading-bolt/shared';
@@ -35,5 +36,28 @@ export class AnalyticsController {
     @Param('accountId', new ParseUUIDPipe({ version: '4' })) accountId: string,
   ) {
     return this.analytics.tradeAnalytics(user.id, accountId);
+  }
+
+  @Get('performance/:accountId')
+  performance(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('accountId', new ParseUUIDPipe({ version: '4' })) accountId: string,
+  ) {
+    return this.analytics.performanceReport(user.id, accountId);
+  }
+
+  @Get('performance/:accountId/export')
+  async exportPerformance(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('accountId', new ParseUUIDPipe({ version: '4' })) accountId: string,
+  ) {
+    const { filename, csv } = await this.analytics.performanceReportCsv(
+      user.id,
+      accountId,
+    );
+    return new StreamableFile(Buffer.from(csv, 'utf-8'), {
+      type: 'text/csv; charset=utf-8',
+      disposition: `attachment; filename="${filename}"`,
+    });
   }
 }

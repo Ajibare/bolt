@@ -5,11 +5,20 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { EquityChart } from "@/components/equity-chart";
-import { formatMoney, formatRatio, portfolioAnalytics } from "@/lib/analytics";
+import {
+  downloadPerformanceCsv,
+  formatMoney,
+  formatNumber,
+  formatRatio,
+  performanceReport,
+  type PeriodReturn,
+} from "@/lib/analytics";
 import { listPaperAccounts } from "@/lib/bots";
 
 const selectClass =
   "rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
+const buttonClass =
+  "rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800";
 
 function MetricCard({
   label,
@@ -40,10 +49,79 @@ function returnTone(value: string): "good" | "bad" | "default" {
   return number > 0 ? "good" : "bad";
 }
 
+function periodTone(value: string | null): "good" | "bad" | "default" {
+  return value === null ? "default" : returnTone(value);
+}
+
+function formatTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleString();
+}
+
+function PeriodTable({ title, rows }: { title: string; rows: PeriodReturn[] }) {
+  if (rows.length === 0) {
+    return null;
+  }
+  return (
+    <section className="mt-6">
+      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{title}</h3>
+      <div className="mt-3 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+        <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-400">
+          <thead>
+            <tr>
+              <th className="px-4 py-3 font-medium text-zinc-400">Period</th>
+              <th className="px-4 py-3 font-medium text-zinc-400">Start equity</th>
+              <th className="px-4 py-3 font-medium text-zinc-400">End equity</th>
+              <th className="px-4 py-3 font-medium text-zinc-400">Return</th>
+              <th className="px-4 py-3 font-medium text-zinc-400">P&L</th>
+              <th className="px-4 py-3 text-right font-medium text-zinc-400">Points</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((period) => (
+              <tr key={period.label} className="border-t border-zinc-200 dark:border-zinc-800">
+                <td className="px-4 py-3 font-mono">{period.label}</td>
+                <td className="px-4 py-3 font-mono">{formatMoney(period.startingEquity)}</td>
+                <td className="px-4 py-3 font-mono">{formatMoney(period.endingEquity)}</td>
+                <td
+                  className={[
+                    "px-4 py-3 font-mono",
+                    periodTone(period.returnPercent) === "good"
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : periodTone(period.returnPercent) === "bad"
+                        ? "text-red-600 dark:text-red-400"
+                        : "text-zinc-900 dark:text-zinc-50",
+                  ].join(" ")}
+                >
+                  {period.returnPercent === null ? "—" : formatRatio(period.returnPercent)}
+                </td>
+                <td
+                  className={[
+                    "px-4 py-3 font-mono",
+                    periodTone(period.pnl) === "good"
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : periodTone(period.pnl) === "bad"
+                        ? "text-red-600 dark:text-red-400"
+                        : "text-zinc-900 dark:text-zinc-50",
+                  ].join(" ")}
+                >
+                  {formatMoney(period.pnl)}
+                </td>
+                <td className="px-4 py-3 text-right font-mono">{period.snapshots}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export default function AnalyticsPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const [accountId, setAccountId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const accountsQuery = useQuery({
     queryKey: ["analytics-paper-accounts"],
@@ -60,9 +138,9 @@ export default function AnalyticsPage() {
   const accounts = accountsQuery.data ?? [];
   const selectedAccountId = accountId ?? accounts[0]?.id ?? null;
 
-  const analyticsQuery = useQuery({
-    queryKey: ["portfolio-analytics", selectedAccountId],
-    queryFn: () => portfolioAnalytics(selectedAccountId as string),
+  const reportQuery = useQuery({
+    queryKey: ["performance-report", selectedAccountId],
+    queryFn: () => performanceReport(selectedAccountId as string),
     enabled: !!user && selectedAccountId !== null,
   });
 
@@ -78,15 +156,48 @@ export default function AnalyticsPage() {
     return null;
   }
 
+  async function handleExportCsv() {
+    if (!selectedAccountId) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      await downloadPerformanceCsv(selectedAccountId);
+    } catch {
+      setExportError("CSV export failed.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const report = reportQuery.data;
+
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-16">
-      <header className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-          Portfolio analytics
-        </h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Equity curve and performance metrics from the paper ledger.
-        </p>
+      <header className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+            Performance report
+          </h1>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            Portfolio equity, FIFO trade metrics and per-period returns from the paper ledger.
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          {exportError && <p className="text-sm text-red-600 dark:text-red-400">{exportError}</p>}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className={buttonClass}
+              onClick={() => void handleExportCsv()}
+              disabled={exporting}
+            >
+              {exporting ? "Exporting…" : "Download CSV"}
+            </button>
+            <button type="button" className={buttonClass} onClick={() => window.print()}>
+              Print report
+            </button>
+          </div>
+        </div>
       </header>
 
       {accounts.length === 0 ? (
@@ -118,46 +229,168 @@ export default function AnalyticsPage() {
             </select>
           </div>
 
-          {analyticsQuery.isPending && (
+          {reportQuery.isPending && (
             <p className="text-sm text-zinc-600 dark:text-zinc-400">Loading…</p>
           )}
 
-          {analyticsQuery.isError && (
+          {reportQuery.isError && (
             <p className="text-sm text-red-600 dark:text-red-400">
               Failed to load analytics for the selected account.
             </p>
           )}
 
-          {analyticsQuery.data && (
+          {report && (
             <>
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-                <MetricCard label="Equity" value={formatMoney(analyticsQuery.data.currentEquity)} />
-                <MetricCard
-                  label="Peak equity"
-                  value={formatMoney(analyticsQuery.data.peakEquity)}
-                />
-                <MetricCard
-                  label="Total return"
-                  value={formatRatio(analyticsQuery.data.totalReturn)}
-                  tone={returnTone(analyticsQuery.data.totalReturn)}
-                />
-                <MetricCard
-                  label="Max drawdown"
-                  value={formatRatio(analyticsQuery.data.maxDrawdown)}
-                  tone="bad"
-                />
-                <MetricCard
-                  label="Realized P&L"
-                  value={formatMoney(analyticsQuery.data.realizedPnl)}
-                  tone={returnTone(analyticsQuery.data.realizedPnl)}
-                />
-              </div>
+              <section aria-label="Portfolio">
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+                  <MetricCard label="Equity" value={formatMoney(report.portfolio.currentEquity)} />
+                  <MetricCard
+                    label="Peak equity"
+                    value={formatMoney(report.portfolio.peakEquity)}
+                  />
+                  <MetricCard
+                    label="Total return"
+                    value={formatRatio(report.portfolio.totalReturn)}
+                    tone={returnTone(report.portfolio.totalReturn)}
+                  />
+                  <MetricCard
+                    label="Max drawdown"
+                    value={formatRatio(report.portfolio.maxDrawdown)}
+                    tone="bad"
+                  />
+                  <MetricCard
+                    label="Realized P&L"
+                    value={formatMoney(report.portfolio.realizedPnl)}
+                    tone={returnTone(report.portfolio.realizedPnl)}
+                  />
+                </div>
 
-              <section className="mt-6 rounded-xl border border-zinc-200 p-6 dark:border-zinc-800">
-                <h2 className="mb-4 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                  Equity curve
+                <section className="mt-6 rounded-xl border border-zinc-200 p-6 dark:border-zinc-800">
+                  <h2 className="mb-4 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    Equity curve
+                  </h2>
+                  <EquityChart points={report.portfolio.equityCurve} />
+                </section>
+              </section>
+
+              <section className="mt-10" aria-label="Trade analytics">
+                <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                  Trade analytics
                 </h2>
-                <EquityChart points={analyticsQuery.data.equityCurve} />
+                <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                  Closed round trips rebuilt FIFO from the filled paper order ledger.
+                </p>
+
+                <div className="mt-6">
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+                    <MetricCard label="Trades" value={String(report.trades.metrics.tradeCount)} />
+                    <MetricCard
+                      label="Win rate"
+                      value={formatRatio(report.trades.metrics.winRate)}
+                    />
+                    <MetricCard
+                      label="Net P&L"
+                      value={formatMoney(report.trades.metrics.netPnl)}
+                      tone={returnTone(report.trades.metrics.netPnl)}
+                    />
+                    <MetricCard
+                      label="Profit factor"
+                      value={
+                        report.trades.metrics.profitFactor === null
+                          ? "—"
+                          : formatNumber(report.trades.metrics.profitFactor)
+                      }
+                    />
+                    <MetricCard
+                      label="Average win"
+                      value={formatMoney(report.trades.metrics.averageWin)}
+                      tone="good"
+                    />
+                    <MetricCard
+                      label="Average loss"
+                      value={formatMoney(report.trades.metrics.averageLoss)}
+                      tone="bad"
+                    />
+                  </div>
+
+                  <div className="mt-6 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+                    {report.trades.trades.length === 0 ? (
+                      <p className="p-6 text-sm text-zinc-600 dark:text-zinc-400">
+                        No closed round trips yet. Run a paper bot to start building trade history.
+                      </p>
+                    ) : (
+                      <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-400">
+                        <thead>
+                          <tr>
+                            <th className="px-4 py-3 font-medium text-zinc-400">Side</th>
+                            <th className="px-4 py-3 font-medium text-zinc-400">Symbol</th>
+                            <th className="px-4 py-3 font-medium text-zinc-400">Size</th>
+                            <th className="px-4 py-3 font-medium text-zinc-400">Entry</th>
+                            <th className="px-4 py-3 font-medium text-zinc-400">Exit</th>
+                            <th className="px-4 py-3 font-medium text-zinc-400">Closed</th>
+                            <th className="px-4 py-3 text-right font-medium text-zinc-400">
+                              Net P&L
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {report.trades.trades.map((trade, index) => (
+                            <tr
+                              key={`${trade.symbol}-${trade.exitTime}-${index}`}
+                              className="border-t border-zinc-200 dark:border-zinc-800"
+                            >
+                              <td
+                                className={[
+                                  "px-4 py-3 font-medium",
+                                  trade.direction === "long"
+                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    : "text-red-600 dark:text-red-400",
+                                ].join(" ")}
+                              >
+                                {trade.direction === "long" ? "Long" : "Short"}
+                              </td>
+                              <td className="px-4 py-3 font-mono">{trade.symbol}</td>
+                              <td className="px-4 py-3 font-mono">
+                                {formatNumber(trade.quantity)}
+                              </td>
+                              <td className="px-4 py-3 font-mono">
+                                {formatMoney(trade.entryPrice)}
+                              </td>
+                              <td className="px-4 py-3 font-mono">
+                                {formatMoney(trade.exitPrice)}
+                              </td>
+                              <td className="px-4 py-3 font-mono">{formatTime(trade.exitTime)}</td>
+                              <td
+                                className={[
+                                  "px-4 py-3 text-right font-mono",
+                                  returnTone(trade.netPnl) === "good"
+                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    : returnTone(trade.netPnl) === "bad"
+                                      ? "text-red-600 dark:text-red-400"
+                                      : "text-zinc-900 dark:text-zinc-50",
+                                ].join(" ")}
+                              >
+                                {formatMoney(trade.netPnl)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              <section className="mt-10" aria-label="Period returns">
+                <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                  Period returns
+                </h2>
+                <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                  Equity change per UTC period; periods without snapshots are skipped.
+                </p>
+                <PeriodTable title="Daily" rows={report.periodReturns.daily} />
+                <PeriodTable title="Weekly" rows={report.periodReturns.weekly} />
+                <PeriodTable title="Monthly" rows={report.periodReturns.monthly} />
               </section>
             </>
           )}
