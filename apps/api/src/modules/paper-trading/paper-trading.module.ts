@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MarketsModule } from '../markets/markets.module.js';
+import { NotificationsModule } from '../notifications/notifications.module.js';
 import { UsersModule } from '../users/users.module.js';
 import {
   PaperAccountEntity,
@@ -32,6 +33,7 @@ import {
       PaperPortfolioSnapshotEntity,
     ]),
     MarketsModule,
+    NotificationsModule,
     UsersModule,
   ],
   controllers: [PaperTradingController],

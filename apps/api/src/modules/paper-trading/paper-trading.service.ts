@@ -609,6 +609,22 @@ export class PaperTradingService {
     await this.portfolios.append(snapshot);
   }
 
+  /** Persists an in-app notification for a risk-rejected order (AGENTS.md §25). */
+  private async notifyRiskRejected(
+    userId: string,
+    symbol: string,
+    side: string,
+    reasons: string,
+  ): Promise<void> {
+    await this.notifications.notifyUser(userId, {
+      type: 'RISK_CHECK_FAILED',
+      severity: 'warn',
+      title: `Order rejected: ${symbol}`,
+      body: `${side.toUpperCase()} ${symbol} was rejected by the risk engine: ${reasons}`,
+      link: null,
+    });
+  }
+
   private mapStatus(status: string) {
     return status as PaperOrderEntity['status'];
   }

@@ -111,12 +111,16 @@ function createService() {
       timestamp: 1,
     })),
   };
+  const notificationsService = {
+    notifyUser: vi.fn(async () => undefined),
+  };
   const service = new PaperTradingService(
     accountsRepo as never,
     ordersRepo as never,
     positionsRepo as never,
     portfoliosRepo as never,
     marketsService as never,
+    notificationsService as never,
   );
   return {
     service,
@@ -125,6 +129,7 @@ function createService() {
     positionsRepo,
     portfoliosRepo,
     marketsService,
+    notificationsService,
   };
 }
 
@@ -197,6 +202,10 @@ describe('PaperTradingService', () => {
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(ctx.ordersRepo.save).not.toHaveBeenCalled();
+      expect(ctx.notificationsService.notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({ type: 'RISK_CHECK_FAILED' }),
+      );
     });
 
     it('applies a custom risk config when provided', async () => {
