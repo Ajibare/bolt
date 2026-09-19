@@ -8,6 +8,24 @@ const environmentValues = Object.values(Environment) as [
 const logLevelValues = Object.values(LogLevel) as [LogLevel, ...LogLevel[]];
 const bybitEnvironmentValues = ['demo', 'testnet', 'mainnet'] as const;
 const binanceEnvironmentValues = ['testnet', 'mainnet'] as const;
+const localDatabaseHosts = new Set([
+  'localhost',
+  '127.0.0.1',
+  '::1',
+  'postgres',
+]);
+
+function databaseHost(databaseUrl: string): string | null {
+  try {
+    let hostname = new URL(databaseUrl).hostname;
+    if (hostname.startsWith('[') && hostname.endsWith(']')) {
+      hostname = hostname.slice(1, -1);
+    }
+    return hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
 
 export const envSchema = z
   .object({
@@ -78,6 +96,23 @@ export const envSchema = z
         message:
           'BINANCE_ENV=mainnet is refused outside production (fail-closed).' +
           ' Development and testing must target Binance Testnet.',
+      });
+    }
+  })
+  .superRefine((value, ctx) => {
+    if (value.NODE_ENV === Environment.PRODUCTION) {
+      return;
+    }
+    const host = databaseHost(value.DATABASE_URL);
+    if (host === null || !localDatabaseHosts.has(host)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['DATABASE_URL'],
+        message:
+          'A non-local DATABASE_URL is refused outside production (fail-closed).' +
+          ' Development and testing must target local Postgres' +
+          ' (localhost, 127.0.0.1, ::1, or the docker-compose "postgres" service).' +
+          ' Use NODE_ENV=production only for a genuine remote production database.',
       });
     }
   });

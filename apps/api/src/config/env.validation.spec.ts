@@ -164,3 +164,55 @@ describe('envSchema — Binance credentials', () => {
     }
   });
 });
+
+describe('envSchema — DATABASE_URL locality', () => {
+  it('accepts a local DATABASE_URL in development', () => {
+    const result = envSchema.safeParse(validEnv());
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts the docker-compose "postgres" host in development', () => {
+    const result = envSchema.safeParse(
+      validEnv({ DATABASE_URL: 'postgres://bolt:bolt@postgres:5432/bolt' }),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts an IPv6 loopback DATABASE_URL in development', () => {
+    const result = envSchema.safeParse(
+      validEnv({ DATABASE_URL: 'postgres://bolt:bolt@[::1]:5432/bolt' }),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('refuses a remote host outside production (fail-closed)', () => {
+    const dev = envSchema.safeParse(
+      validEnv({
+        DATABASE_URL:
+          'postgres://bolt:bolt@ep-something.aws-us-east-2.aws.neon.tech/bolt',
+      }),
+    );
+    expect(dev.success).toBe(false);
+    if (!dev.success) {
+      const issues = JSON.stringify(dev.error.issues);
+      expect(issues).toContain('refused');
+      expect(issues).toContain('DATABASE_URL');
+    }
+  });
+
+  it('refuses an unparseable DATABASE_URL outside production', () => {
+    const result = envSchema.safeParse(validEnv({ DATABASE_URL: 'not-a-url' }));
+    expect(result.success).toBe(false);
+  });
+
+  it('allows a remote DATABASE_URL when NODE_ENV is production', () => {
+    const result = envSchema.safeParse(
+      validEnv({
+        NODE_ENV: 'production',
+        DATABASE_URL:
+          'postgres://bolt:bolt@ep-something.aws-us-east-2.aws.neon.tech/bolt',
+      }),
+    );
+    expect(result.success).toBe(true);
+  });
+});
