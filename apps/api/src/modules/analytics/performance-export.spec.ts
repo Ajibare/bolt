@@ -38,6 +38,7 @@ function reportFor(
       trades: [],
     },
     periodReturns: {
+      hourly: [],
       daily: [
         {
           granularity: 'day',
@@ -76,10 +77,23 @@ describe('performanceReportToCsv', () => {
     );
   });
 
-  it('combines daily, weekly and monthly rows in order', () => {
+  it('combines hourly, daily, weekly and monthly rows in order', () => {
     const report = reportFor();
     report.periodReturns.daily = [];
     report.periodReturns.monthly = [];
+    report.periodReturns.hourly = [
+      {
+        granularity: 'hour',
+        label: '2026-01-01T12:00',
+        startTime: 1767225600000,
+        endTime: 1767229200000,
+        startingEquity: '1000',
+        endingEquity: '1100',
+        returnPercent: '0.10000000',
+        pnl: '100.00000000',
+        snapshots: 2,
+      },
+    ];
     report.periodReturns.weekly = [
       {
         granularity: 'week',
@@ -95,6 +109,9 @@ describe('performanceReportToCsv', () => {
     ];
 
     const lines = performanceReportToCsv(report).trim().split('\n');
+    expect(lines[lines.length - 2]).toBe(
+      'hour,2026-01-01T12:00,1000,1100,0.10000000,100.00000000,2',
+    );
     expect(lines[lines.length - 1]).toBe(
       'week,2026-01-05,1000,1100,0.10000000,100.00000000,2',
     );
@@ -147,7 +164,7 @@ describe('performanceReportToCsv', () => {
 
   it('emits the header even when there are no period rows', () => {
     const report = reportFor();
-    report.periodReturns = { daily: [], weekly: [], monthly: [] };
+    report.periodReturns = { hourly: [], daily: [], weekly: [], monthly: [] };
 
     const lines = performanceReportToCsv(report).trim().split('\n');
     expect(lines).toContain(

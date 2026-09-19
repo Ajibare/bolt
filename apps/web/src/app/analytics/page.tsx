@@ -519,6 +519,7 @@ export default function AnalyticsPage() {
                 <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
                   Equity change per UTC period; periods without snapshots are skipped.
                 </p>
+                <PeriodTable title="Hourly" rows={report.periodReturns.hourly} />
                 <PeriodTable title="Daily" rows={report.periodReturns.daily} />
                 <PeriodTable title="Weekly" rows={report.periodReturns.weekly} />
                 <PeriodTable title="Monthly" rows={report.periodReturns.monthly} />

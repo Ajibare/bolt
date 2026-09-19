@@ -753,6 +753,15 @@ describe('AnalyticsService.performanceReport', () => {
       endingEquity: '1100',
       returnPercent: '0.10000000',
     });
+    expect(result.periodReturns.hourly[0]).toMatchObject({
+      label: '2026-01-01T09:00',
+      endingEquity: '1000',
+    });
+    expect(result.periodReturns.hourly[1]).toMatchObject({
+      label: '2026-01-02T09:00',
+      endingEquity: '1100',
+      returnPercent: '0.10000000',
+    });
     expect(result.periodReturns.weekly[0].endingEquity).toBe('1100');
     expect(result.periodReturns.monthly[0].endingEquity).toBe('1100');
   });

@@ -5,13 +5,15 @@ import type { EquityCurvePoint } from './portfolio-metrics.js';
 /** Fraction precision for per-period returns (0.05 = 5%). */
 const RATIO_PRECISION = 8;
 const MONEY_PRECISION = 8;
+const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
-export type PeriodGranularity = 'day' | 'week' | 'month';
+export type PeriodGranularity = 'hour' | 'day' | 'week' | 'month';
 
 export interface PeriodReturn {
   granularity: PeriodGranularity;
-  /** UTC label of the period start (`yyyy-mm-dd`, or `yyyy-mm` for months). */
+  /** UTC label of the period start (`yyyy-mm-ddThh:00` for hours,
+   * `yyyy-mm-dd` for days/weeks, `yyyy-mm` for months). */
   label: string;
   /** Epoch ms of the period start (UTC). */
   startTime: number;
@@ -47,11 +49,25 @@ function startOfUtcDay(timestamp: number): number {
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 }
 
+/** UTC hour-start containing `timestamp` (`yyyy-mm-ddThh:00:00Z`). */
+function startOfUtcHour(timestamp: number): number {
+  const d = new Date(timestamp);
+  return Date.UTC(
+    d.getUTCFullYear(),
+    d.getUTCMonth(),
+    d.getUTCDate(),
+    d.getUTCHours(),
+  );
+}
+
 /** UTC period-boundary start containing `timestamp` (weeks start Monday). */
 function periodStart(
   timestamp: number,
   granularity: PeriodGranularity,
 ): number {
+  if (granularity === 'hour') {
+    return startOfUtcHour(timestamp);
+  }
   const dayStart = startOfUtcDay(timestamp);
   if (granularity === 'day') {
     return dayStart;
@@ -71,6 +87,9 @@ function nextPeriodStart(
   startTime: number,
   granularity: PeriodGranularity,
 ): number {
+  if (granularity === 'hour') {
+    return startTime + HOUR_MS;
+  }
   if (granularity === 'day') {
     return startTime + DAY_MS;
   }
@@ -86,14 +105,18 @@ function labelFor(startTime: number, granularity: PeriodGranularity): string {
     const d = new Date(startTime);
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
   }
+  if (granularity === 'hour') {
+    return `${new Date(startTime).toISOString().slice(0, 13)}:00`;
+  }
   return new Date(startTime).toISOString().slice(0, 10);
 }
 
 /**
- * Splits the equity curve into calendar periods (UTC day / Monday-based week /
- * month) and computes each period's return. Periods without snapshots are
- * skipped — the next period chains from the last observed equity, so nothing
- * is ever fabricated (AGENTS.md §27). All math is deterministic decimal.
+ * Splits the equity curve into calendar periods (UTC hour / day / Monday-based
+ * week / month) and computes each period's return. Periods without snapshots
+ * are skipped — the next period chains from the last observed equity, so
+ * nothing is ever fabricated (AGENTS.md §27). All math is deterministic
+ * decimal.
  *
  * The opening period's starting equity is the first observed point (there is
  * no earlier data to measure against).

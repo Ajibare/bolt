@@ -124,6 +124,7 @@ export interface PerformanceReport {
   portfolio: PortfolioAnalytics;
   trades: TradeAnalytics;
   periodReturns: {
+    hourly: PeriodReturn[];
     daily: PeriodReturn[];
     weekly: PeriodReturn[];
     monthly: PeriodReturn[];
@@ -303,6 +304,7 @@ export class AnalyticsService {
       portfolio,
       trades,
       periodReturns: {
+        hourly: periodReturns(curve, 'hour'),
         daily: periodReturns(curve, 'day'),
         weekly: periodReturns(curve, 'week'),
         monthly: periodReturns(curve, 'month'),

@@ -46,6 +46,7 @@ function summaryRows(report: PerformanceReport): string[] {
 
 function periodRows(report: PerformanceReport): string[] {
   const periods = [
+    ...report.periodReturns.hourly,
     ...report.periodReturns.daily,
     ...report.periodReturns.weekly,
     ...report.periodReturns.monthly,

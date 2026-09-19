@@ -128,7 +128,7 @@ export function livePortfolioAnalytics(accountId: string): Promise<LivePortfolio
 }
 
 export interface PeriodReturn {
-  granularity: "day" | "week" | "month";
+  granularity: "hour" | "day" | "week" | "month";
   label: string;
   startTime: number;
   endTime: number;
@@ -144,6 +144,7 @@ export interface PerformanceReport {
   portfolio: PortfolioAnalytics;
   trades: TradeAnalytics;
   periodReturns: {
+    hourly: PeriodReturn[];
     daily: PeriodReturn[];
     weekly: PeriodReturn[];
     monthly: PeriodReturn[];

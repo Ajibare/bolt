@@ -14,9 +14,56 @@ function point(timestamp: number, equity: string) {
 
 describe('periodReturns', () => {
   it('returns an empty list for an empty curve', () => {
+    expect(periodReturns([], 'hour')).toEqual([]);
     expect(periodReturns([], 'day')).toEqual([]);
     expect(periodReturns([], 'week')).toEqual([]);
     expect(periodReturns([], 'month')).toEqual([]);
+  });
+
+  it('groups a multi-hour curve into UTC hour buckets chained from the close', () => {
+    const curve = [
+      point(at('2026-01-01T12:00:00Z'), '1000'),
+      point(at('2026-01-01T12:30:00Z'), '1100'),
+      point(at('2026-01-01T13:15:00Z'), '990'),
+      point(at('2026-01-01T14:00:00Z'), '1089'),
+    ];
+
+    const result = periodReturns(curve, 'hour');
+    expect(result).toHaveLength(3);
+
+    const [h1, h2, h3] = result;
+    expect(h1.label).toBe('2026-01-01T12:00');
+    expect(h1.startTime).toBe(at('2026-01-01T12:00:00Z'));
+    expect(h1.endTime).toBe(at('2026-01-01T13:00:00Z'));
+    expect(h1.startingEquity).toBe('1000');
+    expect(h1.endingEquity).toBe('1100');
+    expect(h1.returnPercent).toBe('0.10000000');
+    expect(h1.pnl).toBe('100.00000000');
+    expect(h1.snapshots).toBe(2);
+
+    expect(h2.label).toBe('2026-01-01T13:00');
+    expect(h2.startingEquity).toBe('1100');
+    expect(h2.endingEquity).toBe('990');
+    expect(h2.returnPercent).toBe('-0.10000000');
+
+    expect(h3.label).toBe('2026-01-01T14:00');
+    expect(h3.startingEquity).toBe('990');
+    expect(h3.endingEquity).toBe('1089');
+    expect(h3.returnPercent).toBe('0.10000000');
+  });
+
+  it('skips hours with no snapshots and chains across the gap', () => {
+    const curve = [
+      point(at('2026-01-01T08:00:00Z'), '1000'),
+      point(at('2026-01-01T11:00:00Z'), '1200'),
+    ];
+
+    const result = periodReturns(curve, 'hour');
+    expect(result).toHaveLength(2);
+    expect(result[1].label).toBe('2026-01-01T11:00');
+    expect(result[1].startTime - result[0].startTime).toBe(3 * 3_600_000);
+    expect(result[1].startingEquity).toBe('1000');
+    expect(result[1].returnPercent).toBe('0.20000000');
   });
 
   it('groups a multi-day curve into daily buckets chained from the close', () => {
