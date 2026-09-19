@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-09-19 (Phase 9 increment 9: live trade analytics)
 **Branch:** `main`
-**Last commit:** `20ebcf3` — "feat: add per-bot trade analytics" (Phase 9)
+**Last commit:** `9d59d9f` — "feat: add live trade analytics parity" (Phase 9)
 
 ---
 
