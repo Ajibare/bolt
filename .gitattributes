@@ -1,0 +1,4 @@
+# Git hooks and shell scripts must keep LF line endings so they execute
+# correctly on every platform (Windows autocrlf would otherwise corrupt them).
+.husky/** text eol=lf
+*.sh text eol=lf
