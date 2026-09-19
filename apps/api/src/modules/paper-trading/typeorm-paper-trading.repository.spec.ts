@@ -162,6 +162,32 @@ describe('TypeOrmPaperOrderRepository.listFilledByBotIds', () => {
   });
 });
 
+describe('TypeOrmPaperOrderRepository.listFilledByAccountAndProvider', () => {
+  type ProviderFindOptions = {
+    where: Record<string, unknown>;
+    order: { createdAt: 'ASC' };
+    take?: number;
+  };
+
+  it('matches account, provider and positive fill, ascending', async () => {
+    const find = vi.fn(
+      async (_options?: ProviderFindOptions): Promise<never[]> => [],
+    );
+    const impl = new TypeOrmPaperOrderRepository({ find } as never);
+
+    await impl.listFilledByAccountAndProvider('acc-1', 'binance', 5000);
+
+    const options = find.mock.calls[0][0] as ProviderFindOptions;
+    expect(options.where.accountId).toBe('acc-1');
+    expect(options.where.provider).toBe('binance');
+    expect((options.where.filledQuantity as { _type: string })._type).toBe(
+      'moreThan',
+    );
+    expect(options.order.createdAt).toBe('ASC');
+    expect(options.take).toBe(5000);
+  });
+});
+
 describe('TypeOrmPaperPortfolioRepository.listByAccount', () => {
   type PortfolioFindOptions = {
     where: { accountId: string };

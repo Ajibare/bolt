@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 
 import {
   PaperAccountRepository,
@@ -7,6 +11,10 @@ import {
 } from '../paper-trading/paper-trading.repository.js';
 import type { PaperAccountEntity } from '../paper-trading/entities/paper-trading.entity.js';
 import { BotRepository } from '../bots/bot.repository.js';
+import {
+  BrokersService,
+  type LiveBrokerProvider,
+} from '../brokers/brokers.service.js';
 import {
   equityCurve,
   metricsFromCurve,
@@ -77,6 +85,17 @@ export interface StrategyTradeAnalytics {
   trades: RoundTripTrade[];
 }
 
+/** FIFO-reconstructed trade performance over the live broker fills. */
+export interface LiveTradeAnalytics {
+  accountId: string;
+  /** Active live provider the fills were dispatched through. */
+  provider: LiveBrokerProvider;
+  environment: 'demo' | 'testnet' | 'mainnet';
+  metrics: TradeMetrics;
+  /** Most recent closed round trips first (bounded). */
+  trades: RoundTripTrade[];
+}
+
 /** Per-period performance breakdown over the account equity curve. */
 export interface PerformanceReport {
   accountId: string;
@@ -96,6 +115,7 @@ export class AnalyticsService {
     private readonly portfolios: PaperPortfolioRepository,
     private readonly orders: PaperOrderRepository,
     private readonly bots: BotRepository,
+    private readonly brokers: BrokersService,
   ) {}
 
   async portfolioAnalytics(
@@ -173,6 +193,37 @@ export class AnalyticsService {
       strategyId,
       botIds,
       symbols: [...new Set(bots.map((bot) => bot.symbol))],
+      metrics: summarizeTrades(trades),
+      trades: trades.slice(-RECENT_TRADES_LIMIT).reverse(),
+    };
+  }
+
+  /**
+   * Rebuilds FIFO round trips from the account's live-broker fills (the
+   * active provider's rows only — paper fills are excluded) and aggregates
+   * them, mirroring the paper account trade analytics. Ownership is enforced
+   * before any ledger read and the provider is resolved server-side.
+   */
+  async liveTradeAnalytics(
+    userId: string,
+    accountId: string,
+  ): Promise<LiveTradeAnalytics> {
+    const account = await this.findAccount(userId, accountId);
+    const provider = this.brokers.provider();
+    if (!provider) {
+      throw new BadRequestException('Live broker not configured');
+    }
+    const orders = await this.orders.listFilledByAccountAndProvider(
+      account.id,
+      provider,
+      ORDER_LOOKBACK_LIMIT,
+    );
+    const trades = reconstructTrades(orders);
+
+    return {
+      accountId: account.id,
+      provider,
+      environment: this.brokers.environment(),
       metrics: summarizeTrades(trades),
       trades: trades.slice(-RECENT_TRADES_LIMIT).reverse(),
     };

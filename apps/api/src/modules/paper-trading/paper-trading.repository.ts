@@ -64,6 +64,17 @@ export abstract class PaperOrderRepository {
   ): Promise<PaperOrderEntity[]>;
 
   /**
+   * Filled live-broker orders for one account under a single provider
+   * (`'binance' | 'bybit'`, no `'paper'` rows), ascending. Used to rebuild
+   * round-trip trades FIFO for live-account trade analytics parity.
+   */
+  abstract listFilledByAccountAndProvider(
+    accountId: string,
+    provider: string,
+    limit?: number,
+  ): Promise<PaperOrderEntity[]>;
+
+  /**
    * Filled orders for any bot in the set, in ascending time order. Used to
    * rebuild round-trip trades FIFO for per-strategy analytics across the bots
    * that share one strategy (the set is always derived from the user's owned

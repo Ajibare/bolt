@@ -96,6 +96,18 @@ export function strategyTradeAnalytics(strategyId: string): Promise<StrategyTrad
   );
 }
 
+export interface LiveTradeAnalytics {
+  accountId: string;
+  provider: "binance" | "bybit";
+  environment: "demo" | "testnet" | "mainnet";
+  metrics: TradeMetrics;
+  trades: RoundTripTrade[];
+}
+
+export function liveTradeAnalytics(accountId: string): Promise<LiveTradeAnalytics> {
+  return apiRequest<LiveTradeAnalytics>(`/api/analytics/live/${accountId}/trades`, authHeader());
+}
+
 export interface PeriodReturn {
   granularity: "day" | "week" | "month";
   label: string;

@@ -11,9 +11,12 @@ import {
   formatMoney,
   formatNumber,
   formatRatio,
+  liveTradeAnalytics,
   performanceReport,
   strategyTradeAnalytics,
   type PeriodReturn,
+  type RoundTripTrade,
+  type TradeMetrics,
 } from "@/lib/analytics";
 import { listBots, listPaperAccounts } from "@/lib/bots";
 
@@ -57,6 +60,92 @@ function periodTone(value: string | null): "good" | "bad" | "default" {
 
 function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleString();
+}
+
+function TradeMetricCards({
+  metrics,
+  className = "",
+}: {
+  metrics: TradeMetrics;
+  className?: string;
+}) {
+  return (
+    <div className={`grid grid-cols-2 gap-4 md:grid-cols-3 ${className}`}>
+      <MetricCard label="Trades" value={String(metrics.tradeCount)} />
+      <MetricCard label="Win rate" value={formatRatio(metrics.winRate)} />
+      <MetricCard
+        label="Net P&L"
+        value={formatMoney(metrics.netPnl)}
+        tone={returnTone(metrics.netPnl)}
+      />
+      <MetricCard
+        label="Profit factor"
+        value={metrics.profitFactor === null ? "—" : formatNumber(metrics.profitFactor)}
+      />
+      <MetricCard label="Average win" value={formatMoney(metrics.averageWin)} tone="good" />
+      <MetricCard label="Average loss" value={formatMoney(metrics.averageLoss)} tone="bad" />
+    </div>
+  );
+}
+
+function TradesTable({ trades, emptyMessage }: { trades: RoundTripTrade[]; emptyMessage: string }) {
+  return (
+    <div className="mt-6 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+      {trades.length === 0 ? (
+        <p className="p-6 text-sm text-zinc-600 dark:text-zinc-400">{emptyMessage}</p>
+      ) : (
+        <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-400">
+          <thead>
+            <tr>
+              <th className="px-4 py-3 font-medium text-zinc-400">Side</th>
+              <th className="px-4 py-3 font-medium text-zinc-400">Symbol</th>
+              <th className="px-4 py-3 font-medium text-zinc-400">Size</th>
+              <th className="px-4 py-3 font-medium text-zinc-400">Entry</th>
+              <th className="px-4 py-3 font-medium text-zinc-400">Exit</th>
+              <th className="px-4 py-3 font-medium text-zinc-400">Closed</th>
+              <th className="px-4 py-3 text-right font-medium text-zinc-400">Net P&L</th>
+            </tr>
+          </thead>
+          <tbody>
+            {trades.map((trade, index) => (
+              <tr
+                key={`${trade.symbol}-${trade.exitTime}-${index}`}
+                className="border-t border-zinc-200 dark:border-zinc-800"
+              >
+                <td
+                  className={[
+                    "px-4 py-3 font-medium",
+                    trade.direction === "long"
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-red-600 dark:text-red-400",
+                  ].join(" ")}
+                >
+                  {trade.direction === "long" ? "Long" : "Short"}
+                </td>
+                <td className="px-4 py-3 font-mono">{trade.symbol}</td>
+                <td className="px-4 py-3 font-mono">{formatNumber(trade.quantity)}</td>
+                <td className="px-4 py-3 font-mono">{formatMoney(trade.entryPrice)}</td>
+                <td className="px-4 py-3 font-mono">{formatMoney(trade.exitPrice)}</td>
+                <td className="px-4 py-3 font-mono">{formatTime(trade.exitTime)}</td>
+                <td
+                  className={[
+                    "px-4 py-3 text-right font-mono",
+                    returnTone(trade.netPnl) === "good"
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : returnTone(trade.netPnl) === "bad"
+                        ? "text-red-600 dark:text-red-400"
+                        : "text-zinc-900 dark:text-zinc-50",
+                  ].join(" ")}
+                >
+                  {formatMoney(trade.netPnl)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
 }
 
 function PeriodTable({ title, rows }: { title: string; rows: PeriodReturn[] }) {
@@ -183,6 +272,12 @@ export default function AnalyticsPage() {
     enabled: !!user && selectedStrategyId !== null,
   });
 
+  const liveTradeQuery = useQuery({
+    queryKey: ["live-trade-analytics", selectedAccountId],
+    queryFn: () => liveTradeAnalytics(selectedAccountId as string),
+    enabled: !!user && selectedAccountId !== null,
+  });
+
   if (loading || accountsQuery.isPending || botsQuery.isPending) {
     return (
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-16">
@@ -218,7 +313,8 @@ export default function AnalyticsPage() {
             Performance report
           </h1>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Portfolio equity, FIFO trade metrics and per-period returns from the paper ledger.
+            Portfolio equity, FIFO trade metrics and per-period returns from the paper and live
+            broker ledgers.
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -320,104 +416,41 @@ export default function AnalyticsPage() {
                   Closed round trips rebuilt FIFO from the filled paper order ledger.
                 </p>
 
-                <div className="mt-6">
-                  <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-                    <MetricCard label="Trades" value={String(report.trades.metrics.tradeCount)} />
-                    <MetricCard
-                      label="Win rate"
-                      value={formatRatio(report.trades.metrics.winRate)}
-                    />
-                    <MetricCard
-                      label="Net P&L"
-                      value={formatMoney(report.trades.metrics.netPnl)}
-                      tone={returnTone(report.trades.metrics.netPnl)}
-                    />
-                    <MetricCard
-                      label="Profit factor"
-                      value={
-                        report.trades.metrics.profitFactor === null
-                          ? "—"
-                          : formatNumber(report.trades.metrics.profitFactor)
-                      }
-                    />
-                    <MetricCard
-                      label="Average win"
-                      value={formatMoney(report.trades.metrics.averageWin)}
-                      tone="good"
-                    />
-                    <MetricCard
-                      label="Average loss"
-                      value={formatMoney(report.trades.metrics.averageLoss)}
-                      tone="bad"
-                    />
-                  </div>
+                <TradeMetricCards metrics={report.trades.metrics} className="mt-6" />
+                <TradesTable
+                  trades={report.trades.trades}
+                  emptyMessage="No closed round trips yet. Run a paper bot to start building trade history."
+                />
+              </section>
 
-                  <div className="mt-6 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
-                    {report.trades.trades.length === 0 ? (
-                      <p className="p-6 text-sm text-zinc-600 dark:text-zinc-400">
-                        No closed round trips yet. Run a paper bot to start building trade history.
-                      </p>
-                    ) : (
-                      <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-400">
-                        <thead>
-                          <tr>
-                            <th className="px-4 py-3 font-medium text-zinc-400">Side</th>
-                            <th className="px-4 py-3 font-medium text-zinc-400">Symbol</th>
-                            <th className="px-4 py-3 font-medium text-zinc-400">Size</th>
-                            <th className="px-4 py-3 font-medium text-zinc-400">Entry</th>
-                            <th className="px-4 py-3 font-medium text-zinc-400">Exit</th>
-                            <th className="px-4 py-3 font-medium text-zinc-400">Closed</th>
-                            <th className="px-4 py-3 text-right font-medium text-zinc-400">
-                              Net P&L
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {report.trades.trades.map((trade, index) => (
-                            <tr
-                              key={`${trade.symbol}-${trade.exitTime}-${index}`}
-                              className="border-t border-zinc-200 dark:border-zinc-800"
-                            >
-                              <td
-                                className={[
-                                  "px-4 py-3 font-medium",
-                                  trade.direction === "long"
-                                    ? "text-emerald-600 dark:text-emerald-400"
-                                    : "text-red-600 dark:text-red-400",
-                                ].join(" ")}
-                              >
-                                {trade.direction === "long" ? "Long" : "Short"}
-                              </td>
-                              <td className="px-4 py-3 font-mono">{trade.symbol}</td>
-                              <td className="px-4 py-3 font-mono">
-                                {formatNumber(trade.quantity)}
-                              </td>
-                              <td className="px-4 py-3 font-mono">
-                                {formatMoney(trade.entryPrice)}
-                              </td>
-                              <td className="px-4 py-3 font-mono">
-                                {formatMoney(trade.exitPrice)}
-                              </td>
-                              <td className="px-4 py-3 font-mono">{formatTime(trade.exitTime)}</td>
-                              <td
-                                className={[
-                                  "px-4 py-3 text-right font-mono",
-                                  returnTone(trade.netPnl) === "good"
-                                    ? "text-emerald-600 dark:text-emerald-400"
-                                    : returnTone(trade.netPnl) === "bad"
-                                      ? "text-red-600 dark:text-red-400"
-                                      : "text-zinc-900 dark:text-zinc-50",
-                                ].join(" ")}
-                              >
-                                {formatMoney(trade.netPnl)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                </div>
+              <section className="mt-10" aria-label="Live trade analytics">
+                <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                  Live trade analytics
+                </h2>
+                <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                  Closed round trips dispatched through the live broker, rebuilt FIFO from the
+                  reconciled broker fills.
+                </p>
+
+                {liveTradeQuery.isPending ? (
+                  <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">Loading…</p>
+                ) : liveTradeQuery.isError ? (
+                  <p className="mt-4 text-sm text-red-600 dark:text-red-400">
+                    Live analytics unavailable — is the live broker configured?
+                  </p>
+                ) : liveTradeQuery.data ? (
+                  <>
+                    <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
+                      Provider <span className="font-mono">{liveTradeQuery.data.provider}</span> ·{" "}
+                      <span className="font-mono">{liveTradeQuery.data.environment}</span>
+                    </p>
+                    <TradeMetricCards metrics={liveTradeQuery.data.metrics} className="mt-4" />
+                    <TradesTable
+                      trades={liveTradeQuery.data.trades}
+                      emptyMessage="No live round trips yet. Run a live bot to start building broker trade history."
+                    />
+                  </>
+                ) : null}
               </section>
 
               <section className="mt-10" aria-label="Period returns">
@@ -479,108 +512,11 @@ export default function AnalyticsPage() {
                       Strategy <span className="font-mono">{botTradeQuery.data.strategyId}</span> on{" "}
                       <span className="font-mono">{botTradeQuery.data.symbol}</span>
                     </p>
-                    <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-3">
-                      <MetricCard
-                        label="Trades"
-                        value={String(botTradeQuery.data.metrics.tradeCount)}
-                      />
-                      <MetricCard
-                        label="Win rate"
-                        value={formatRatio(botTradeQuery.data.metrics.winRate)}
-                      />
-                      <MetricCard
-                        label="Net P&L"
-                        value={formatMoney(botTradeQuery.data.metrics.netPnl)}
-                        tone={returnTone(botTradeQuery.data.metrics.netPnl)}
-                      />
-                      <MetricCard
-                        label="Profit factor"
-                        value={
-                          botTradeQuery.data.metrics.profitFactor === null
-                            ? "—"
-                            : formatNumber(botTradeQuery.data.metrics.profitFactor)
-                        }
-                      />
-                      <MetricCard
-                        label="Average win"
-                        value={formatMoney(botTradeQuery.data.metrics.averageWin)}
-                        tone="good"
-                      />
-                      <MetricCard
-                        label="Average loss"
-                        value={formatMoney(botTradeQuery.data.metrics.averageLoss)}
-                        tone="bad"
-                      />
-                    </div>
-
-                    <div className="mt-6 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
-                      {botTradeQuery.data.trades.length === 0 ? (
-                        <p className="p-6 text-sm text-zinc-600 dark:text-zinc-400">
-                          No closed round trips for this bot yet. Run the bot to start building
-                          trade history.
-                        </p>
-                      ) : (
-                        <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-400">
-                          <thead>
-                            <tr>
-                              <th className="px-4 py-3 font-medium text-zinc-400">Side</th>
-                              <th className="px-4 py-3 font-medium text-zinc-400">Symbol</th>
-                              <th className="px-4 py-3 font-medium text-zinc-400">Size</th>
-                              <th className="px-4 py-3 font-medium text-zinc-400">Entry</th>
-                              <th className="px-4 py-3 font-medium text-zinc-400">Exit</th>
-                              <th className="px-4 py-3 font-medium text-zinc-400">Closed</th>
-                              <th className="px-4 py-3 text-right font-medium text-zinc-400">
-                                Net P&L
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {botTradeQuery.data.trades.map((trade, index) => (
-                              <tr
-                                key={`${trade.symbol}-${trade.exitTime}-${index}`}
-                                className="border-t border-zinc-200 dark:border-zinc-800"
-                              >
-                                <td
-                                  className={[
-                                    "px-4 py-3 font-medium",
-                                    trade.direction === "long"
-                                      ? "text-emerald-600 dark:text-emerald-400"
-                                      : "text-red-600 dark:text-red-400",
-                                  ].join(" ")}
-                                >
-                                  {trade.direction === "long" ? "Long" : "Short"}
-                                </td>
-                                <td className="px-4 py-3 font-mono">{trade.symbol}</td>
-                                <td className="px-4 py-3 font-mono">
-                                  {formatNumber(trade.quantity)}
-                                </td>
-                                <td className="px-4 py-3 font-mono">
-                                  {formatMoney(trade.entryPrice)}
-                                </td>
-                                <td className="px-4 py-3 font-mono">
-                                  {formatMoney(trade.exitPrice)}
-                                </td>
-                                <td className="px-4 py-3 font-mono">
-                                  {formatTime(trade.exitTime)}
-                                </td>
-                                <td
-                                  className={[
-                                    "px-4 py-3 text-right font-mono",
-                                    returnTone(trade.netPnl) === "good"
-                                      ? "text-emerald-600 dark:text-emerald-400"
-                                      : returnTone(trade.netPnl) === "bad"
-                                        ? "text-red-600 dark:text-red-400"
-                                        : "text-zinc-900 dark:text-zinc-50",
-                                  ].join(" ")}
-                                >
-                                  {formatMoney(trade.netPnl)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
-                    </div>
+                    <TradeMetricCards metrics={botTradeQuery.data.metrics} className="mt-4" />
+                    <TradesTable
+                      trades={botTradeQuery.data.trades}
+                      emptyMessage="No closed round trips for this bot yet. Run the bot to start building trade history."
+                    />
                   </>
                 ) : null}
               </section>
@@ -635,108 +571,11 @@ export default function AnalyticsPage() {
                         {strategyTradeQuery.data.symbols.join(", ") || "—"}
                       </span>
                     </p>
-                    <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-3">
-                      <MetricCard
-                        label="Trades"
-                        value={String(strategyTradeQuery.data.metrics.tradeCount)}
-                      />
-                      <MetricCard
-                        label="Win rate"
-                        value={formatRatio(strategyTradeQuery.data.metrics.winRate)}
-                      />
-                      <MetricCard
-                        label="Net P&L"
-                        value={formatMoney(strategyTradeQuery.data.metrics.netPnl)}
-                        tone={returnTone(strategyTradeQuery.data.metrics.netPnl)}
-                      />
-                      <MetricCard
-                        label="Profit factor"
-                        value={
-                          strategyTradeQuery.data.metrics.profitFactor === null
-                            ? "—"
-                            : formatNumber(strategyTradeQuery.data.metrics.profitFactor)
-                        }
-                      />
-                      <MetricCard
-                        label="Average win"
-                        value={formatMoney(strategyTradeQuery.data.metrics.averageWin)}
-                        tone="good"
-                      />
-                      <MetricCard
-                        label="Average loss"
-                        value={formatMoney(strategyTradeQuery.data.metrics.averageLoss)}
-                        tone="bad"
-                      />
-                    </div>
-
-                    <div className="mt-6 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
-                      {strategyTradeQuery.data.trades.length === 0 ? (
-                        <p className="p-6 text-sm text-zinc-600 dark:text-zinc-400">
-                          No closed round trips for this strategy yet. Run the bots to start
-                          building trade history.
-                        </p>
-                      ) : (
-                        <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-400">
-                          <thead>
-                            <tr>
-                              <th className="px-4 py-3 font-medium text-zinc-400">Side</th>
-                              <th className="px-4 py-3 font-medium text-zinc-400">Symbol</th>
-                              <th className="px-4 py-3 font-medium text-zinc-400">Size</th>
-                              <th className="px-4 py-3 font-medium text-zinc-400">Entry</th>
-                              <th className="px-4 py-3 font-medium text-zinc-400">Exit</th>
-                              <th className="px-4 py-3 font-medium text-zinc-400">Closed</th>
-                              <th className="px-4 py-3 text-right font-medium text-zinc-400">
-                                Net P&L
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {strategyTradeQuery.data.trades.map((trade, index) => (
-                              <tr
-                                key={`${trade.symbol}-${trade.exitTime}-${index}`}
-                                className="border-t border-zinc-200 dark:border-zinc-800"
-                              >
-                                <td
-                                  className={[
-                                    "px-4 py-3 font-medium",
-                                    trade.direction === "long"
-                                      ? "text-emerald-600 dark:text-emerald-400"
-                                      : "text-red-600 dark:text-red-400",
-                                  ].join(" ")}
-                                >
-                                  {trade.direction === "long" ? "Long" : "Short"}
-                                </td>
-                                <td className="px-4 py-3 font-mono">{trade.symbol}</td>
-                                <td className="px-4 py-3 font-mono">
-                                  {formatNumber(trade.quantity)}
-                                </td>
-                                <td className="px-4 py-3 font-mono">
-                                  {formatMoney(trade.entryPrice)}
-                                </td>
-                                <td className="px-4 py-3 font-mono">
-                                  {formatMoney(trade.exitPrice)}
-                                </td>
-                                <td className="px-4 py-3 font-mono">
-                                  {formatTime(trade.exitTime)}
-                                </td>
-                                <td
-                                  className={[
-                                    "px-4 py-3 text-right font-mono",
-                                    returnTone(trade.netPnl) === "good"
-                                      ? "text-emerald-600 dark:text-emerald-400"
-                                      : returnTone(trade.netPnl) === "bad"
-                                        ? "text-red-600 dark:text-red-400"
-                                        : "text-zinc-900 dark:text-zinc-50",
-                                  ].join(" ")}
-                                >
-                                  {formatMoney(trade.netPnl)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
-                    </div>
+                    <TradeMetricCards metrics={strategyTradeQuery.data.metrics} className="mt-4" />
+                    <TradesTable
+                      trades={strategyTradeQuery.data.trades}
+                      emptyMessage="No closed round trips for this strategy yet. Run the bots to start building trade history."
+                    />
                   </>
                 ) : null}
               </section>

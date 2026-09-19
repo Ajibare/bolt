@@ -38,6 +38,14 @@ export class AnalyticsController {
     return this.analytics.tradeAnalytics(user.id, accountId);
   }
 
+  @Get('live/:accountId/trades')
+  liveTrades(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('accountId', new ParseUUIDPipe({ version: '4' })) accountId: string,
+  ) {
+    return this.analytics.liveTradeAnalytics(user.id, accountId);
+  }
+
   @Get('bots/:botId/trades')
   botTrades(
     @CurrentUser() user: AuthenticatedUser,

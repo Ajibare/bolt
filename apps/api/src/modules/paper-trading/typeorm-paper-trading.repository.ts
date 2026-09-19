@@ -97,6 +97,18 @@ export class TypeOrmPaperOrderRepository extends PaperOrderRepository {
     });
   }
 
+  listFilledByAccountAndProvider(
+    accountId: string,
+    provider: string,
+    limit?: number,
+  ): Promise<PaperOrderEntity[]> {
+    return this.repo.find({
+      where: { accountId, provider, filledQuantity: MoreThan('0') },
+      order: { createdAt: 'ASC' },
+      take: limit,
+    });
+  }
+
   listFilledByAccountAndBot(
     accountId: string,
     botId: string,

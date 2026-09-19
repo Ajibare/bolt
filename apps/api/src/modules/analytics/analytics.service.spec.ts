@@ -18,18 +18,24 @@ function makeService() {
     listFilledByAccount: vi.fn(),
     listFilledByAccountAndBot: vi.fn(),
     listFilledByBotIds: vi.fn(),
+    listFilledByAccountAndProvider: vi.fn(),
   };
   const bots = {
     findByUserIdAndId: vi.fn(),
     listByUserId: vi.fn(),
+  };
+  const brokers = {
+    provider: vi.fn(),
+    environment: vi.fn(),
   };
   const service = new AnalyticsService(
     accounts as never,
     portfolios as never,
     orders as never,
     bots as never,
+    brokers as never,
   );
-  return { service, accounts, portfolios, orders, bots };
+  return { service, accounts, portfolios, orders, bots, brokers };
 }
 
 function accountFor(
@@ -468,6 +474,91 @@ describe('AnalyticsService.strategyTradeAnalytics', () => {
     expect(result.metrics.tradeCount).toBe(0);
     expect(result.trades).toEqual([]);
     expect(result.botIds).toEqual(['bot-1']);
+  });
+});
+
+describe('AnalyticsService.liveTradeAnalytics', () => {
+  function order(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      id: 'o-1',
+      accountId: 'acc-1',
+      provider: 'binance',
+      symbol: 'BTCUSDT',
+      side: 'buy',
+      status: 'FILLED',
+      filledQuantity: '1',
+      avgFillPrice: '100',
+      fees: '0',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      ...overrides,
+    };
+  }
+
+  it('rejects an account that does not belong to the requesting user', async () => {
+    const { service, accounts, brokers } = makeService();
+    accounts.findByUserIdAndId.mockResolvedValue(null);
+
+    await expect(
+      service.liveTradeAnalytics('user-1', 'acc-1'),
+    ).rejects.toMatchObject({ status: 404 });
+
+    expect(brokers.provider).not.toHaveBeenCalled();
+  });
+
+  it('rejects when no live broker is configured', async () => {
+    const { service, accounts, brokers, orders } = makeService();
+    accounts.findByUserIdAndId.mockResolvedValue(accountFor());
+    brokers.provider.mockReturnValue(null);
+
+    await expect(
+      service.liveTradeAnalytics('user-1', 'acc-1'),
+    ).rejects.toMatchObject({ status: 400 });
+
+    expect(orders.listFilledByAccountAndProvider).not.toHaveBeenCalled();
+  });
+
+  it('rebuilds FIFO round trips from the active provider fills only', async () => {
+    const { service, accounts, orders, brokers } = makeService();
+    accounts.findByUserIdAndId.mockResolvedValue(accountFor());
+    brokers.provider.mockReturnValue('binance');
+    brokers.environment.mockReturnValue('testnet');
+    orders.listFilledByAccountAndProvider.mockResolvedValue([
+      order({ id: 'o-1' }),
+      order({
+        id: 'o-2',
+        side: 'sell',
+        avgFillPrice: '110',
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+      }),
+    ]);
+
+    const result = await service.liveTradeAnalytics('user-1', 'acc-1');
+
+    expect(orders.listFilledByAccountAndProvider).toHaveBeenCalledWith(
+      'acc-1',
+      'binance',
+      5000,
+    );
+    expect(result.provider).toBe('binance');
+    expect(result.environment).toBe('testnet');
+    expect(result.metrics.tradeCount).toBe(1);
+    expect(result.metrics.winCount).toBe(1);
+    expect(result.metrics.netPnl).toBe('10.00000000');
+    expect(result.trades).toHaveLength(1);
+    expect(result.trades[0].direction).toBe('long');
+  });
+
+  it('reports empty metrics when the account has no live fills', async () => {
+    const { service, accounts, orders, brokers } = makeService();
+    accounts.findByUserIdAndId.mockResolvedValue(accountFor());
+    brokers.provider.mockReturnValue('binance');
+    brokers.environment.mockReturnValue('testnet');
+    orders.listFilledByAccountAndProvider.mockResolvedValue([]);
+
+    const result = await service.liveTradeAnalytics('user-1', 'acc-1');
+
+    expect(result.metrics.tradeCount).toBe(0);
+    expect(result.trades).toEqual([]);
   });
 });
 
