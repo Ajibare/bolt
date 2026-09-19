@@ -9,8 +9,10 @@ import {
   PaperOrderRepository,
   PaperPortfolioRepository,
 } from '../paper-trading/paper-trading.repository.js';
+import { toDecimal } from '@trading-bolt/shared';
 import type { PaperAccountEntity } from '../paper-trading/entities/paper-trading.entity.js';
 import { BotRepository } from '../bots/bot.repository.js';
+import type { BotEntity } from '../bots/entities/bot.entity.js';
 import {
   BrokersService,
   type LiveBrokerProvider,
@@ -84,6 +86,22 @@ export interface StrategyTradeAnalytics {
   metrics: TradeMetrics;
   /** Most recent closed round trips first (bounded). */
   trades: RoundTripTrade[];
+}
+
+/** One row of the strategy-vs-strategy comparison — the FIFO trade metrics
+ * for a single strategy (the same engine as `strategyTradeAnalytics`). */
+export interface StrategyComparisonItem {
+  strategyId: string;
+  botIds: string[];
+  symbols: string[];
+  metrics: TradeMetrics;
+}
+
+/** Head-to-head view across every strategy the requesting user runs. */
+export interface StrategyComparison {
+  /** Highest net P&L first (ties broken by strategy id, so ordering is
+   * deterministic across requests). */
+  strategies: StrategyComparisonItem[];
 }
 
 /** FIFO-reconstructed trade performance over the live broker fills. */
@@ -206,19 +224,76 @@ export class AnalyticsService {
     if (bots.length === 0) {
       throw new NotFoundException('No bots run this strategy for the user');
     }
+    const { botIds, symbols, metrics, trades } =
+      await this.strategyAggregate(bots);
+
+    return {
+      strategyId,
+      botIds,
+      symbols,
+      metrics,
+      trades: trades.slice(-RECENT_TRADES_LIMIT).reverse(),
+    };
+  }
+
+  /**
+   * Strategy-vs-strategy comparison: one FIFO summary per strategy the
+   * requesting user runs, sorted by net P&L (ties by strategy id) so the view
+   * is deterministic. Every bot set is derived server-side from the user's own
+   * bots — cross-user data can never leak in (AGENTS.md §23).
+   */
+  async strategyComparisonAnalytics(
+    userId: string,
+  ): Promise<StrategyComparison> {
+    const mine = await this.bots.listByUserId(userId);
+
+    const byStrategy = new Map<string, BotEntity[]>();
+    for (const bot of mine) {
+      const list = byStrategy.get(bot.strategyId) ?? [];
+      list.push(bot);
+      byStrategy.set(bot.strategyId, list);
+    }
+
+    const strategies: StrategyComparisonItem[] = [];
+    for (const [strategyId, bots] of byStrategy) {
+      const { botIds, symbols, metrics } = await this.strategyAggregate(bots);
+      strategies.push({ strategyId, botIds, symbols, metrics });
+    }
+
+    strategies.sort((a, b) => {
+      const diff = toDecimal(b.metrics.netPnl).minus(
+        toDecimal(a.metrics.netPnl),
+      );
+      if (!diff.isZero()) {
+        return diff.isNegative() ? -1 : 1;
+      }
+      return a.strategyId.localeCompare(b.strategyId);
+    });
+
+    return { strategies };
+  }
+
+  /**
+   * FIFO aggregate across a server-derived set of the user's own bots,
+   * shared by the per-strategy and comparison endpoints.
+   */
+  private async strategyAggregate(bots: BotEntity[]): Promise<{
+    botIds: string[];
+    symbols: string[];
+    metrics: TradeMetrics;
+    trades: RoundTripTrade[];
+  }> {
     const botIds = bots.map((bot) => bot.id);
     const orders = await this.orders.listFilledByBotIds(
       botIds,
       ORDER_LOOKBACK_LIMIT,
     );
     const trades = reconstructTrades(orders);
-
     return {
-      strategyId,
       botIds,
       symbols: [...new Set(bots.map((bot) => bot.symbol))],
       metrics: summarizeTrades(trades),
-      trades: trades.slice(-RECENT_TRADES_LIMIT).reverse(),
+      trades,
     };
   }
 

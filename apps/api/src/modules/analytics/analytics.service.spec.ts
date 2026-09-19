@@ -490,6 +490,130 @@ describe('AnalyticsService.strategyTradeAnalytics', () => {
   });
 });
 
+describe('AnalyticsService.strategyComparisonAnalytics', () => {
+  function strategyBot(
+    overrides: Partial<{
+      id: string;
+      strategyId: string;
+      symbol: string;
+    }> = {},
+  ) {
+    return {
+      id: 'bot-1',
+      userId: 'user-1',
+      paperAccountId: 'acc-1',
+      strategyId: 'sma-crossover',
+      symbol: 'BTCUSDT',
+      ...overrides,
+    };
+  }
+
+  function order(
+    overrides: Partial<{
+      id: string;
+      botId: string;
+      symbol: string;
+      side: string;
+      avgFillPrice: string;
+      createdAt: Date;
+    }> = {},
+  ) {
+    return {
+      id: 'o-1',
+      botId: 'bot-1',
+      accountId: 'acc-1',
+      symbol: 'BTCUSDT',
+      side: 'buy',
+      status: 'FILLED',
+      filledQuantity: '1',
+      avgFillPrice: '100',
+      fees: '0',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      ...overrides,
+    };
+  }
+
+  it('returns an empty comparison when the user has no bots', async () => {
+    const { service, bots, orders } = makeService();
+    bots.listByUserId.mockResolvedValue([]);
+
+    const result = await service.strategyComparisonAnalytics('user-1');
+
+    expect(result.strategies).toEqual([]);
+    expect(orders.listFilledByBotIds).not.toHaveBeenCalled();
+  });
+
+  it('sorts strategies by net P&L (deterministic) and derives bot sets server-side', async () => {
+    const { service, bots, orders } = makeService();
+    bots.listByUserId.mockResolvedValue([
+      strategyBot({
+        id: 'bot-1',
+        strategyId: 'sma-crossover',
+        symbol: 'BTCUSDT',
+      }),
+      strategyBot({
+        id: 'bot-2',
+        strategyId: 'rsi-reversion',
+        symbol: 'ETHUSDT',
+      }),
+    ]);
+    orders.listFilledByBotIds.mockImplementation(async (botIds: string[]) =>
+      botIds.includes('bot-1')
+        ? [
+            order(),
+            order({
+              id: 'o-2',
+              side: 'sell',
+              avgFillPrice: '110',
+              createdAt: new Date('2026-01-02T00:00:00Z'),
+            }),
+          ]
+        : [
+            order({
+              id: 'o-3',
+              botId: 'bot-2',
+              symbol: 'ETHUSDT',
+              avgFillPrice: '2000',
+            }),
+            order({
+              id: 'o-4',
+              botId: 'bot-2',
+              symbol: 'ETHUSDT',
+              side: 'sell',
+              avgFillPrice: '2200',
+              createdAt: new Date('2026-01-03T00:00:00Z'),
+            }),
+          ],
+    );
+
+    const result = await service.strategyComparisonAnalytics('user-1');
+
+    expect(result.strategies).toHaveLength(2);
+    expect(result.strategies[0].strategyId).toBe('rsi-reversion');
+    expect(result.strategies[0].botIds).toEqual(['bot-2']);
+    expect(result.strategies[0].metrics.netPnl).toBe('200.00000000');
+    expect(result.strategies[1].strategyId).toBe('sma-crossover');
+    expect(result.strategies[1].symbols).toEqual(['BTCUSDT']);
+    expect(result.strategies[1].metrics.netPnl).toBe('10.00000000');
+  });
+
+  it('ties break by strategy id so ordering never varies between requests', async () => {
+    const { service, bots, orders } = makeService();
+    bots.listByUserId.mockResolvedValue([
+      strategyBot({ id: 'bot-1', strategyId: 'z-strategy' }),
+      strategyBot({ id: 'bot-2', strategyId: 'a-strategy' }),
+    ]);
+    orders.listFilledByBotIds.mockResolvedValue([]);
+
+    const result = await service.strategyComparisonAnalytics('user-1');
+
+    expect(result.strategies.map((item) => item.strategyId)).toEqual([
+      'a-strategy',
+      'z-strategy',
+    ]);
+  });
+});
+
 describe('AnalyticsService.liveTradeAnalytics', () => {
   function order(overrides: Partial<Record<string, unknown>> = {}) {
     return {

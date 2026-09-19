@@ -96,6 +96,21 @@ export function strategyTradeAnalytics(strategyId: string): Promise<StrategyTrad
   );
 }
 
+export interface StrategyComparisonItem {
+  strategyId: string;
+  botIds: string[];
+  symbols: string[];
+  metrics: TradeMetrics;
+}
+
+export interface StrategyComparison {
+  strategies: StrategyComparisonItem[];
+}
+
+export function strategyComparison(): Promise<StrategyComparison> {
+  return apiRequest<StrategyComparison>("/api/analytics/strategies/compare", authHeader());
+}
+
 export interface LiveTradeAnalytics {
   accountId: string;
   provider: "binance" | "bybit";

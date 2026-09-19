@@ -62,6 +62,11 @@ export class AnalyticsController {
     return this.analytics.botTradeAnalytics(user.id, botId);
   }
 
+  @Get('strategies/compare')
+  strategyComparison(@CurrentUser() user: AuthenticatedUser) {
+    return this.analytics.strategyComparisonAnalytics(user.id);
+  }
+
   @Get('strategies/:strategyId/trades')
   strategyTrades(
     @CurrentUser() user: AuthenticatedUser,

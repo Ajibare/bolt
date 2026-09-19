@@ -14,6 +14,7 @@ import {
   liveTradeAnalytics,
   livePortfolioAnalytics,
   performanceReport,
+  strategyComparison,
   strategyTradeAnalytics,
   type PeriodReturn,
   type RoundTripTrade,
@@ -271,6 +272,12 @@ export default function AnalyticsPage() {
     queryKey: ["strategy-trade-analytics", selectedStrategyId],
     queryFn: () => strategyTradeAnalytics(selectedStrategyId as string),
     enabled: !!user && selectedStrategyId !== null,
+  });
+
+  const strategyComparisonQuery = useQuery({
+    queryKey: ["strategy-comparison"],
+    queryFn: strategyComparison,
+    enabled: !!user,
   });
 
   const liveTradeQuery = useQuery({
@@ -578,6 +585,190 @@ export default function AnalyticsPage() {
                       emptyMessage="No closed round trips for this bot yet. Run the bot to start building trade history."
                     />
                   </>
+                ) : null}
+              </section>
+
+              <section className="mt-10" aria-label="Strategy comparison">
+                <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                  Strategy comparison
+                </h2>
+                <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                  FIFO trade metrics per strategy across your own bots, best net P&L first.
+                </p>
+
+                {strategyComparisonQuery.isPending ? (
+                  <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">Loading…</p>
+                ) : strategyComparisonQuery.isError ? (
+                  <p className="mt-4 text-sm text-red-600 dark:text-red-400">
+                    Failed to load the strategy comparison.
+                  </p>
+                ) : strategyComparisonQuery.data ? (
+                  strategyComparisonQuery.data.strategies.length === 0 ? (
+                    <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
+                      No bots yet. Create one in the Bots page to start comparing strategies.
+                    </p>
+                  ) : (
+                    <div className="mt-4 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+                      <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-400">
+                        <thead>
+                          <tr>
+                            <th className="px-4 py-3 font-medium text-zinc-400">Strategy</th>
+                            <th className="px-4 py-3 text-center font-medium text-zinc-400">
+                              Bots
+                            </th>
+                            <th className="px-4 py-3 font-medium text-zinc-400">Symbols</th>
+                            <th className="px-4 py-3 text-right font-medium text-zinc-400">
+                              Trades
+                            </th>
+                            <th className="px-4 py-3 text-right font-medium text-zinc-400">
+                              Win rate
+                            </th>
+                            <th className="px-4 py-3 text-right font-medium text-zinc-400">
+                              Net P&L
+                            </th>
+                            <th className="px-4 py-3 text-right font-medium text-zinc-400">
+                              Profit factor
+                            </th>
+                            <th className="px-4 py-3 text-right font-medium text-zinc-400">
+                              Avg win
+                            </th>
+                            <th className="px-4 py-3 text-right font-medium text-zinc-400">
+                              Avg loss
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {strategyComparisonQuery.data.strategies.map((item) => {
+                            const netPnl = Number(item.metrics.netPnl);
+                            const netPnlClass =
+                              netPnl > 0
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : netPnl < 0
+                                  ? "text-red-600 dark:text-red-400"
+                                  : "";
+                            return (
+                              <tr
+                                key={item.strategyId}
+                                className="border-t border-zinc-200 dark:border-zinc-800"
+                              >
+                                <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-50">
+                                  {item.strategyId}
+                                </td>
+                                <td className="px-4 py-3 text-center">{item.botIds.length}</td>
+                                <td className="px-4 py-3 font-mono">
+                                  {item.symbols.join(", ") || "—"}
+                                </td>
+                                <td className="px-4 py-3 text-right">{item.metrics.tradeCount}</td>
+                                <td className="px-4 py-3 text-right">
+                                  {formatRatio(item.metrics.winRate)}
+                                </td>
+                                <td className={`px-4 py-3 text-right font-mono ${netPnlClass}`}>
+                                  {formatMoney(item.metrics.netPnl)}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  {item.metrics.profitFactor === null
+                                    ? "—"
+                                    : formatNumber(item.metrics.profitFactor)}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  {formatMoney(item.metrics.averageWin)}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  {formatMoney(item.metrics.averageLoss)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                ) : null}
+              </section>
+
+              <section className="mt-10" aria-label="Strategy comparison">
+                <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                  Strategy comparison
+                </h2>
+                <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                  One FIFO summary per strategy you run, best net P&L first — lets strategies be
+                  compared head to head.
+                </p>
+
+                {strategyComparisonQuery.isPending ? (
+                  <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">Loading…</p>
+                ) : strategyComparisonQuery.isError ? (
+                  <p className="mt-4 text-sm text-red-600 dark:text-red-400">
+                    Failed to load the strategy comparison.
+                  </p>
+                ) : strategyComparisonQuery.data ? (
+                  strategyComparisonQuery.data.strategies.length === 0 ? (
+                    <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
+                      No strategies running yet. Create a bot in the Bots page to start comparing
+                      strategies.
+                    </p>
+                  ) : (
+                    <div className="mt-6 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+                      <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-400">
+                        <thead>
+                          <tr>
+                            <th className="px-4 py-3 font-medium text-zinc-400">Strategy</th>
+                            <th className="px-4 py-3 font-medium text-zinc-400">Bots</th>
+                            <th className="px-4 py-3 font-medium text-zinc-400">Symbols</th>
+                            <th className="px-4 py-3 text-right font-medium text-zinc-400">
+                              Trades
+                            </th>
+                            <th className="px-4 py-3 text-right font-medium text-zinc-400">
+                              Win rate
+                            </th>
+                            <th className="px-4 py-3 text-right font-medium text-zinc-400">
+                              Net P&L
+                            </th>
+                            <th className="px-4 py-3 text-right font-medium text-zinc-400">
+                              Profit factor
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {strategyComparisonQuery.data.strategies.map((item) => (
+                            <tr
+                              key={item.strategyId}
+                              className="border-t border-zinc-200 dark:border-zinc-800"
+                            >
+                              <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">
+                                {item.strategyId}
+                              </td>
+                              <td className="px-4 py-3">{item.botIds.length}</td>
+                              <td className="px-4 py-3 font-mono">
+                                {item.symbols.join(", ") || "—"}
+                              </td>
+                              <td className="px-4 py-3 text-right">{item.metrics.tradeCount}</td>
+                              <td className="px-4 py-3 text-right">
+                                {formatRatio(item.metrics.winRate)}
+                              </td>
+                              <td
+                                className={[
+                                  "px-4 py-3 text-right font-mono",
+                                  Number(item.metrics.netPnl) > 0
+                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    : Number(item.metrics.netPnl) < 0
+                                      ? "text-red-600 dark:text-red-400"
+                                      : "",
+                                ].join(" ")}
+                              >
+                                {formatMoney(item.metrics.netPnl)}
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                {item.metrics.profitFactor === null
+                                  ? "—"
+                                  : formatNumber(item.metrics.profitFactor)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
                 ) : null}
               </section>
 
