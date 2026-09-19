@@ -16,13 +16,18 @@ function makeService() {
   };
   const orders = {
     listFilledByAccount: vi.fn(),
+    listFilledByAccountAndBot: vi.fn(),
+  };
+  const bots = {
+    findByUserIdAndId: vi.fn(),
   };
   const service = new AnalyticsService(
     accounts as never,
     portfolios as never,
     orders as never,
+    bots as never,
   );
-  return { service, accounts, portfolios, orders };
+  return { service, accounts, portfolios, orders, bots };
 }
 
 function accountFor(
@@ -206,6 +211,120 @@ describe('AnalyticsService.tradeAnalytics', () => {
     expect(result.metrics.tradeCount).toBe(0);
     expect(result.metrics.profitFactor).toBeNull();
     expect(result.trades).toEqual([]);
+  });
+});
+
+describe('AnalyticsService.botTradeAnalytics', () => {
+  function botFor(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'bot-1',
+      userId: 'user-1',
+      name: 'TestBot',
+      strategyId: 'sma-crossover',
+      config: {},
+      symbol: 'BTCUSDT',
+      interval: '1m',
+      riskConfig: {},
+      paperAccountId: 'acc-1',
+      executionMode: 'PAPER',
+      status: 'RUNNING',
+      quantity: '1',
+      stopLossPercent: '0.02',
+      takeProfitPercent: null,
+      lastSignalDirection: null,
+      lastSignalReason: null,
+      lastSignalAt: null,
+      lastOrderId: null,
+      lastOrderStatus: null,
+      lastOrderSymbol: null,
+      lastError: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+      ...overrides,
+    };
+  }
+
+  function filledOrder(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'order-1',
+      accountId: 'acc-1',
+      clientOrderId: 'c-1',
+      brokerOrderId: null,
+      provider: 'paper',
+      brokerStatus: null,
+      bracketOrderListId: null,
+      lastSyncedAt: null,
+      botId: 'bot-1',
+      botRunId: null,
+      side: 'buy',
+      type: 'market',
+      symbol: 'BTCUSDT',
+      quantity: '1',
+      price: null,
+      stopLoss: null,
+      takeProfit: null,
+      reduceOnly: false,
+      feeRate: '0',
+      slippageRate: '0',
+      status: 'FILLED',
+      filledQuantity: '1',
+      avgFillPrice: '100',
+      fees: '0',
+      reason: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+      ...overrides,
+    };
+  }
+
+  it('rejects a bot that does not belong to the requesting user', async () => {
+    const { service, bots, orders } = makeService();
+    bots.findByUserIdAndId.mockResolvedValue(null);
+
+    await expect(
+      service.botTradeAnalytics('user-1', 'bot-1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(orders.listFilledByAccountAndBot).not.toHaveBeenCalled();
+  });
+
+  it('scopes the ownership lookup to the authenticated user id', async () => {
+    const { service, bots, orders } = makeService();
+    bots.findByUserIdAndId.mockResolvedValue(botFor());
+    orders.listFilledByAccountAndBot.mockResolvedValue([]);
+
+    await service.botTradeAnalytics('user-1', 'bot-1');
+    expect(bots.findByUserIdAndId).toHaveBeenCalledWith('user-1', 'bot-1');
+  });
+
+  it('rebuilds FIFO round trips from the bot orders alone', async () => {
+    const { service, bots, orders } = makeService();
+    bots.findByUserIdAndId.mockResolvedValue(botFor());
+    orders.listFilledByAccountAndBot.mockResolvedValue([
+      filledOrder({ side: 'buy', filledQuantity: '1', avgFillPrice: '100' }),
+      filledOrder({
+        id: 'order-2',
+        side: 'sell',
+        filledQuantity: '1',
+        avgFillPrice: '110',
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+      }),
+    ]);
+
+    const result = await service.botTradeAnalytics('user-1', 'bot-1');
+
+    expect(orders.listFilledByAccountAndBot).toHaveBeenCalledWith(
+      'acc-1',
+      'bot-1',
+      5000,
+    );
+    expect(result.botId).toBe('bot-1');
+    expect(result.strategyId).toBe('sma-crossover');
+    expect(result.symbol).toBe('BTCUSDT');
+    expect(result.metrics.tradeCount).toBe(1);
+    expect(result.metrics.winCount).toBe(1);
+    expect(result.metrics.netPnl).toBe('10.00000000');
+    expect(result.trades).toHaveLength(1);
+    expect(result.trades[0].direction).toBe('long');
   });
 });
 

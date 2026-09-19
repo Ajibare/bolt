@@ -38,6 +38,14 @@ export class AnalyticsController {
     return this.analytics.tradeAnalytics(user.id, accountId);
   }
 
+  @Get('bots/:botId/trades')
+  botTrades(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('botId', new ParseUUIDPipe({ version: '4' })) botId: string,
+  ) {
+    return this.analytics.botTradeAnalytics(user.id, botId);
+  }
+
   @Get('performance/:accountId')
   performance(
     @CurrentUser() user: AuthenticatedUser,

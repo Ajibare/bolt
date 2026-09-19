@@ -90,6 +90,40 @@ describe('TypeOrmPaperOrderRepository.listFilledByAccount', () => {
   });
 });
 
+describe('TypeOrmPaperOrderRepository.listFilledByAccountAndBot', () => {
+  type BotFilledFindOptions = {
+    where: Record<string, unknown>;
+    order: { createdAt: 'ASC' };
+    take?: number;
+  };
+
+  function makeOrderRepo() {
+    const find = vi.fn(
+      async (_options?: BotFilledFindOptions): Promise<never[]> => [],
+    );
+    const repo = { find };
+    const impl = new TypeOrmPaperOrderRepository(repo as never);
+    return { impl, find };
+  }
+
+  it('scopes to account and bot with a positive fill, ascending', async () => {
+    const { impl, find } = makeOrderRepo();
+    await impl.listFilledByAccountAndBot('acc-5', 'bot-2', 5000);
+
+    const options = find.mock.calls[0][0] as BotFilledFindOptions;
+    expect(options.where.accountId).toBe('acc-5');
+    expect(options.where.botId).toBe('bot-2');
+    const operator = options.where.filledQuantity as {
+      _type: string;
+      _value: string;
+    };
+    expect(operator._type).toBe('moreThan');
+    expect(operator._value).toBe('0');
+    expect(options.order.createdAt).toBe('ASC');
+    expect(options.take).toBe(5000);
+  });
+});
+
 describe('TypeOrmPaperPortfolioRepository.listByAccount', () => {
   type PortfolioFindOptions = {
     where: { accountId: string };

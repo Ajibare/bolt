@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { EquityChart } from "@/components/equity-chart";
 import {
+  botTradeAnalytics,
   downloadPerformanceCsv,
   formatMoney,
   formatNumber,
@@ -13,7 +14,7 @@ import {
   performanceReport,
   type PeriodReturn,
 } from "@/lib/analytics";
-import { listPaperAccounts } from "@/lib/bots";
+import { listBots, listPaperAccounts } from "@/lib/bots";
 
 const selectClass =
   "rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
@@ -120,12 +121,19 @@ export default function AnalyticsPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const [accountId, setAccountId] = useState<string | null>(null);
+  const [botId, setBotId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
   const accountsQuery = useQuery({
     queryKey: ["analytics-paper-accounts"],
     queryFn: listPaperAccounts,
+    enabled: !!user,
+  });
+
+  const botsQuery = useQuery({
+    queryKey: ["analytics-bots"],
+    queryFn: listBots,
     enabled: !!user,
   });
 
@@ -138,13 +146,28 @@ export default function AnalyticsPage() {
   const accounts = accountsQuery.data ?? [];
   const selectedAccountId = accountId ?? accounts[0]?.id ?? null;
 
+  const allBots = botsQuery.data ?? [];
+  const accountBots =
+    selectedAccountId === null
+      ? []
+      : allBots.filter((bot) => bot.paperAccountId === selectedAccountId);
+  const selectedBotId = accountBots.some((bot) => bot.id === botId)
+    ? botId
+    : (accountBots[0]?.id ?? null);
+
   const reportQuery = useQuery({
     queryKey: ["performance-report", selectedAccountId],
     queryFn: () => performanceReport(selectedAccountId as string),
     enabled: !!user && selectedAccountId !== null,
   });
 
-  if (loading || accountsQuery.isPending) {
+  const botTradeQuery = useQuery({
+    queryKey: ["bot-trade-analytics", selectedBotId],
+    queryFn: () => botTradeAnalytics(selectedBotId as string),
+    enabled: !!user && selectedBotId !== null,
+  });
+
+  if (loading || accountsQuery.isPending || botsQuery.isPending) {
     return (
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-16">
         <p className="text-sm text-zinc-600 dark:text-zinc-400">Loading…</p>
@@ -391,6 +414,159 @@ export default function AnalyticsPage() {
                 <PeriodTable title="Daily" rows={report.periodReturns.daily} />
                 <PeriodTable title="Weekly" rows={report.periodReturns.weekly} />
                 <PeriodTable title="Monthly" rows={report.periodReturns.monthly} />
+              </section>
+
+              <section className="mt-10" aria-label="Bot trade analytics">
+                <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                  Bot trade analytics
+                </h2>
+                <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                  Closed round trips attributed to one paper bot, rebuilt FIFO from the order
+                  ledger.
+                </p>
+
+                <div className="mt-6 flex items-center gap-3">
+                  <label
+                    htmlFor="bot"
+                    className="text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                  >
+                    Bot
+                  </label>
+                  <select
+                    id="bot"
+                    className={selectClass}
+                    value={selectedBotId ?? ""}
+                    onChange={(event) => setBotId(event.target.value)}
+                  >
+                    {accountBots.map((bot) => (
+                      <option key={bot.id} value={bot.id}>
+                        {bot.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {accountBots.length === 0 ? (
+                  <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
+                    No bots on this account yet. Create one in the Bots page to start attributing
+                    trades.
+                  </p>
+                ) : botTradeQuery.isPending ? (
+                  <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">Loading…</p>
+                ) : botTradeQuery.isError ? (
+                  <p className="mt-4 text-sm text-red-600 dark:text-red-400">
+                    Failed to load bot analytics.
+                  </p>
+                ) : botTradeQuery.data ? (
+                  <>
+                    <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
+                      Strategy <span className="font-mono">{botTradeQuery.data.strategyId}</span> on{" "}
+                      <span className="font-mono">{botTradeQuery.data.symbol}</span>
+                    </p>
+                    <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-3">
+                      <MetricCard
+                        label="Trades"
+                        value={String(botTradeQuery.data.metrics.tradeCount)}
+                      />
+                      <MetricCard
+                        label="Win rate"
+                        value={formatRatio(botTradeQuery.data.metrics.winRate)}
+                      />
+                      <MetricCard
+                        label="Net P&L"
+                        value={formatMoney(botTradeQuery.data.metrics.netPnl)}
+                        tone={returnTone(botTradeQuery.data.metrics.netPnl)}
+                      />
+                      <MetricCard
+                        label="Profit factor"
+                        value={
+                          botTradeQuery.data.metrics.profitFactor === null
+                            ? "—"
+                            : formatNumber(botTradeQuery.data.metrics.profitFactor)
+                        }
+                      />
+                      <MetricCard
+                        label="Average win"
+                        value={formatMoney(botTradeQuery.data.metrics.averageWin)}
+                        tone="good"
+                      />
+                      <MetricCard
+                        label="Average loss"
+                        value={formatMoney(botTradeQuery.data.metrics.averageLoss)}
+                        tone="bad"
+                      />
+                    </div>
+
+                    <div className="mt-6 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+                      {botTradeQuery.data.trades.length === 0 ? (
+                        <p className="p-6 text-sm text-zinc-600 dark:text-zinc-400">
+                          No closed round trips for this bot yet. Run the bot to start building
+                          trade history.
+                        </p>
+                      ) : (
+                        <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-400">
+                          <thead>
+                            <tr>
+                              <th className="px-4 py-3 font-medium text-zinc-400">Side</th>
+                              <th className="px-4 py-3 font-medium text-zinc-400">Symbol</th>
+                              <th className="px-4 py-3 font-medium text-zinc-400">Size</th>
+                              <th className="px-4 py-3 font-medium text-zinc-400">Entry</th>
+                              <th className="px-4 py-3 font-medium text-zinc-400">Exit</th>
+                              <th className="px-4 py-3 font-medium text-zinc-400">Closed</th>
+                              <th className="px-4 py-3 text-right font-medium text-zinc-400">
+                                Net P&L
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {botTradeQuery.data.trades.map((trade, index) => (
+                              <tr
+                                key={`${trade.symbol}-${trade.exitTime}-${index}`}
+                                className="border-t border-zinc-200 dark:border-zinc-800"
+                              >
+                                <td
+                                  className={[
+                                    "px-4 py-3 font-medium",
+                                    trade.direction === "long"
+                                      ? "text-emerald-600 dark:text-emerald-400"
+                                      : "text-red-600 dark:text-red-400",
+                                  ].join(" ")}
+                                >
+                                  {trade.direction === "long" ? "Long" : "Short"}
+                                </td>
+                                <td className="px-4 py-3 font-mono">{trade.symbol}</td>
+                                <td className="px-4 py-3 font-mono">
+                                  {formatNumber(trade.quantity)}
+                                </td>
+                                <td className="px-4 py-3 font-mono">
+                                  {formatMoney(trade.entryPrice)}
+                                </td>
+                                <td className="px-4 py-3 font-mono">
+                                  {formatMoney(trade.exitPrice)}
+                                </td>
+                                <td className="px-4 py-3 font-mono">
+                                  {formatTime(trade.exitTime)}
+                                </td>
+                                <td
+                                  className={[
+                                    "px-4 py-3 text-right font-mono",
+                                    returnTone(trade.netPnl) === "good"
+                                      ? "text-emerald-600 dark:text-emerald-400"
+                                      : returnTone(trade.netPnl) === "bad"
+                                        ? "text-red-600 dark:text-red-400"
+                                        : "text-zinc-900 dark:text-zinc-50",
+                                  ].join(" ")}
+                                >
+                                  {formatMoney(trade.netPnl)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </>
+                ) : null}
               </section>
             </>
           )}

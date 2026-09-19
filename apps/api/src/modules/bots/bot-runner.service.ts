@@ -281,10 +281,12 @@ export class BotRunnerService {
                 clientOrderId,
               } as PlacePaperOrderDto,
               bot.riskConfig as Partial<RiskConfig>,
+              { botId: bot.id, botRunId: run.id },
             )
           : await this.liveTrading.placeOrder({
               accountId: bot.paperAccountId,
               botId: bot.id,
+              botRunId: run.id,
               symbol: bot.symbol,
               side: intent.side,
               type: 'market',

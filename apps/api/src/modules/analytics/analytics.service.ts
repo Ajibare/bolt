@@ -6,6 +6,7 @@ import {
   PaperPortfolioRepository,
 } from '../paper-trading/paper-trading.repository.js';
 import type { PaperAccountEntity } from '../paper-trading/entities/paper-trading.entity.js';
+import { BotRepository } from '../bots/bot.repository.js';
 import {
   equityCurve,
   metricsFromCurve,
@@ -54,6 +55,16 @@ export interface TradeAnalytics {
   trades: RoundTripTrade[];
 }
 
+/** FIFO-reconstructed trade performance attributed to a single bot. */
+export interface BotTradeAnalytics {
+  botId: string;
+  strategyId: string;
+  symbol: string;
+  metrics: TradeMetrics;
+  /** Most recent closed round trips first (bounded). */
+  trades: RoundTripTrade[];
+}
+
 /** Per-period performance breakdown over the account equity curve. */
 export interface PerformanceReport {
   accountId: string;
@@ -72,6 +83,7 @@ export class AnalyticsService {
     private readonly accounts: PaperAccountRepository,
     private readonly portfolios: PaperPortfolioRepository,
     private readonly orders: PaperOrderRepository,
+    private readonly bots: BotRepository,
   ) {}
 
   async portfolioAnalytics(
@@ -92,6 +104,36 @@ export class AnalyticsService {
   ): Promise<TradeAnalytics> {
     const account = await this.findAccount(userId, accountId);
     return this.tradesFor(account);
+  }
+
+  /**
+   * Rebuilds closed round-trip trades FIFO from the orders one bot placed on
+   * its paper account and aggregates them. Ownership is enforced before any
+   * ledger read; orders created before bot attribution exist in the ledger
+   * but simply do not match the bot (they were backfilled where possible).
+   */
+  async botTradeAnalytics(
+    userId: string,
+    botId: string,
+  ): Promise<BotTradeAnalytics> {
+    const bot = await this.bots.findByUserIdAndId(userId, botId);
+    if (!bot) {
+      throw new NotFoundException('Bot not found');
+    }
+    const orders = await this.orders.listFilledByAccountAndBot(
+      bot.paperAccountId,
+      bot.id,
+      ORDER_LOOKBACK_LIMIT,
+    );
+    const trades = reconstructTrades(orders);
+
+    return {
+      botId: bot.id,
+      strategyId: bot.strategyId,
+      symbol: bot.symbol,
+      metrics: summarizeTrades(trades),
+      trades: trades.slice(-RECENT_TRADES_LIMIT).reverse(),
+    };
   }
 
   /**

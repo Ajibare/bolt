@@ -103,12 +103,21 @@ export class PaperAccountEntity {
 @Entity('paper_orders')
 @Unique('uq_paper_orders_account_client', ['accountId', 'clientOrderId'])
 @Index('idx_paper_orders_account_status', ['accountId', 'status'])
+@Index('idx_paper_orders_account_bot', ['accountId', 'botId'])
 export class PaperOrderEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column({ name: 'account_id', type: 'uuid' })
   accountId: string;
+
+  /** Bot that placed the order (null for manual or pre-attribution orders). */
+  @Column({ name: 'bot_id', type: 'uuid', nullable: true })
+  botId: string | null;
+
+  /** Bot run that produced the order (null when not bot-driven). */
+  @Column({ name: 'bot_run_id', type: 'uuid', nullable: true })
+  botRunId: string | null;
 
   @Column({ name: 'client_order_id', type: 'varchar', length: 64 })
   clientOrderId: string;

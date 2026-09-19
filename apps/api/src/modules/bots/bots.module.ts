@@ -54,6 +54,6 @@ import { BotScheduler, BullMqBotScheduler } from './bot-scheduler.js';
     { provide: BotScheduler, useClass: BullMqBotScheduler },
     BotExecutionProcessor,
   ],
-  exports: [BotRunnerService],
+  exports: [BotRunnerService, BotRepository],
 })
 export class BotsModule {}

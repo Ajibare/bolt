@@ -82,12 +82,17 @@ export class PaperTradingService {
    * `riskConfig` is an optional server-side policy override (AGENTS.md §18):
    * only trusted callers such as the bot runner supply it; it is never derived
    * from frontend input. Defaults to `DEFAULT_RISK_CONFIG` when omitted.
+   *
+   * `botContext` is an optional server-side attribution override (Phase 10
+   * per-bot analytics): the bot runner supplies which bot+run produced the
+   * order so the ledger records it. It is never accepted from frontend input.
    */
   async placeOrder(
     userId: string,
     accountId: string,
     dto: PlacePaperOrderDto,
     riskConfig?: Partial<RiskConfig> | null,
+    botContext?: { botId: string; botRunId: string } | null,
   ): Promise<PaperOrderEntity> {
     const account = await this.ownedAccount(userId, accountId);
     if (account.status !== 'ACTIVE') {
@@ -152,6 +157,7 @@ export class PaperTradingService {
       clientOrderId,
       executed,
       oracle,
+      botContext,
     );
   }
 
@@ -433,6 +439,7 @@ export class PaperTradingService {
     clientOrderId: string,
     executed: BrokerOrder,
     oracle: MonetaryOracle,
+    botContext?: { botId: string; botRunId: string } | null,
   ): Promise<PaperOrderEntity> {
     const prior = positions.find(
       (position) => position.symbol === executed.symbol,
@@ -466,6 +473,8 @@ export class PaperTradingService {
     order.accountId = account.id;
     order.clientOrderId = clientOrderId;
     order.brokerOrderId = executed.id;
+    order.botId = botContext?.botId ?? null;
+    order.botRunId = botContext?.botRunId ?? null;
     order.side = executed.side;
     order.type = executed.type;
     order.symbol = executed.symbol;

@@ -33,6 +33,8 @@ import {
 export interface PlaceLiveOrderInput {
   accountId: string;
   botId: string;
+  /** Bot run that produced the order (null outside a run, e.g. flattening). */
+  botRunId?: string;
   symbol: string;
   side: 'buy' | 'sell';
   type: 'market' | 'limit';
@@ -210,6 +212,8 @@ export class LiveTradingService {
     order.accountId = input.accountId;
     order.clientOrderId = clientOrderId;
     order.brokerOrderId = placed.id;
+    order.botId = input.botId;
+    order.botRunId = input.botRunId ?? null;
     order.provider = provider;
     order.brokerStatus = placed.status;
     order.lastSyncedAt = new Date();
