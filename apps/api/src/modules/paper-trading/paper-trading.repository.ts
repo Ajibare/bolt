@@ -64,6 +64,17 @@ export abstract class PaperOrderRepository {
   ): Promise<PaperOrderEntity[]>;
 
   /**
+   * Filled orders for any bot in the set, in ascending time order. Used to
+   * rebuild round-trip trades FIFO for per-strategy analytics across the bots
+   * that share one strategy (the set is always derived from the user's owned
+   * bots server-side, AGENTS.md §23).
+   */
+  abstract listFilledByBotIds(
+    botIds: string[],
+    limit?: number,
+  ): Promise<PaperOrderEntity[]>;
+
+  /**
    * Live-provider orders that still need a broker sync (AGENTS.md §17):
    * non-terminal orders plus any FILLED order not yet reconciled (whose fill
    * fees settle on that first sweep).

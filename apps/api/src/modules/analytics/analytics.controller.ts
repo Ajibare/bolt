@@ -46,6 +46,14 @@ export class AnalyticsController {
     return this.analytics.botTradeAnalytics(user.id, botId);
   }
 
+  @Get('strategies/:strategyId/trades')
+  strategyTrades(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('strategyId') strategyId: string,
+  ) {
+    return this.analytics.strategyTradeAnalytics(user.id, strategyId);
+  }
+
   @Get('performance/:accountId')
   performance(
     @CurrentUser() user: AuthenticatedUser,

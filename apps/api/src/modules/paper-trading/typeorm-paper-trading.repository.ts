@@ -109,6 +109,20 @@ export class TypeOrmPaperOrderRepository extends PaperOrderRepository {
     });
   }
 
+  listFilledByBotIds(
+    botIds: string[],
+    limit?: number,
+  ): Promise<PaperOrderEntity[]> {
+    if (botIds.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.repo.find({
+      where: { botId: In(botIds), filledQuantity: MoreThan('0') },
+      order: { createdAt: 'ASC' },
+      take: limit,
+    });
+  }
+
   /**
    * Live-provider orders that still need a broker sync (AGENTS.md §17):
    * non-terminal orders plus FILLED orders that have never been reconciled

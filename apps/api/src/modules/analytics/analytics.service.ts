@@ -65,6 +65,18 @@ export interface BotTradeAnalytics {
   trades: RoundTripTrade[];
 }
 
+/** FIFO-reconstructed trade performance rolled up across the user's bots. */
+export interface StrategyTradeAnalytics {
+  strategyId: string;
+  /** Bots of the requesting user running this strategy. */
+  botIds: string[];
+  /** Distinct symbols traded across those bots. */
+  symbols: string[];
+  metrics: TradeMetrics;
+  /** Most recent closed round trips first (bounded). */
+  trades: RoundTripTrade[];
+}
+
 /** Per-period performance breakdown over the account equity curve. */
 export interface PerformanceReport {
   accountId: string;
@@ -131,6 +143,36 @@ export class AnalyticsService {
       botId: bot.id,
       strategyId: bot.strategyId,
       symbol: bot.symbol,
+      metrics: summarizeTrades(trades),
+      trades: trades.slice(-RECENT_TRADES_LIMIT).reverse(),
+    };
+  }
+
+  /**
+   * Rolls FIFO round trips up across every bot of the requesting user that
+   * runs the given strategy. Ownership is derived server-side from the user's
+   * own bots (AGENTS.md §23) — the strategy id alone is never trusted.
+   */
+  async strategyTradeAnalytics(
+    userId: string,
+    strategyId: string,
+  ): Promise<StrategyTradeAnalytics> {
+    const mine = await this.bots.listByUserId(userId);
+    const bots = mine.filter((bot) => bot.strategyId === strategyId);
+    if (bots.length === 0) {
+      throw new NotFoundException('No bots run this strategy for the user');
+    }
+    const botIds = bots.map((bot) => bot.id);
+    const orders = await this.orders.listFilledByBotIds(
+      botIds,
+      ORDER_LOOKBACK_LIMIT,
+    );
+    const trades = reconstructTrades(orders);
+
+    return {
+      strategyId,
+      botIds,
+      symbols: [...new Set(bots.map((bot) => bot.symbol))],
       metrics: summarizeTrades(trades),
       trades: trades.slice(-RECENT_TRADES_LIMIT).reverse(),
     };

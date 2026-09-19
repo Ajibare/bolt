@@ -17,9 +17,11 @@ function makeService() {
   const orders = {
     listFilledByAccount: vi.fn(),
     listFilledByAccountAndBot: vi.fn(),
+    listFilledByBotIds: vi.fn(),
   };
   const bots = {
     findByUserIdAndId: vi.fn(),
+    listByUserId: vi.fn(),
   };
   const service = new AnalyticsService(
     accounts as never,
@@ -325,6 +327,147 @@ describe('AnalyticsService.botTradeAnalytics', () => {
     expect(result.metrics.netPnl).toBe('10.00000000');
     expect(result.trades).toHaveLength(1);
     expect(result.trades[0].direction).toBe('long');
+  });
+});
+
+describe('AnalyticsService.strategyTradeAnalytics', () => {
+  function strategyBot(
+    overrides: Partial<{
+      id: string;
+      userId: string;
+      paperAccountId: string;
+      strategyId: string;
+      symbol: string;
+    }> = {},
+  ) {
+    return {
+      id: 'bot-1',
+      userId: 'user-1',
+      paperAccountId: 'acc-1',
+      strategyId: 'sma-crossover',
+      symbol: 'BTCUSDT',
+      ...overrides,
+    };
+  }
+
+  function order(
+    overrides: Partial<{
+      id: string;
+      botId: string;
+      accountId: string;
+      symbol: string;
+      side: string;
+      avgFillPrice: string;
+      createdAt: Date;
+    }> = {},
+  ) {
+    return {
+      id: 'o-1',
+      botId: 'bot-1',
+      accountId: 'acc-1',
+      symbol: 'BTCUSDT',
+      side: 'buy',
+      status: 'FILLED',
+      filledQuantity: '1',
+      avgFillPrice: '100',
+      fees: '0',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      ...overrides,
+    };
+  }
+
+  it('rejects a strategy the user has no bots for', async () => {
+    const { service, bots, orders } = makeService();
+    bots.listByUserId.mockResolvedValue([strategyBot()]);
+
+    await expect(
+      service.strategyTradeAnalytics('user-1', 'unknown-strategy'),
+    ).rejects.toMatchObject({ status: 404 });
+
+    expect(bots.listByUserId).toHaveBeenCalledWith('user-1');
+    expect(orders.listFilledByBotIds).not.toHaveBeenCalled();
+  });
+
+  it('scopes ownership to the requesting user before querying orders', async () => {
+    const { service, bots, orders } = makeService();
+    bots.listByUserId.mockResolvedValue([strategyBot()]);
+    orders.listFilledByBotIds.mockResolvedValue([order()]);
+
+    const result = await service.strategyTradeAnalytics(
+      'user-1',
+      'sma-crossover',
+    );
+
+    expect(bots.listByUserId).toHaveBeenCalledWith('user-1');
+    expect(orders.listFilledByBotIds).toHaveBeenCalledWith(['bot-1'], 5000);
+    expect(result.strategyId).toBe('sma-crossover');
+    expect(result.botIds).toEqual(['bot-1']);
+    expect(result.symbols).toEqual(['BTCUSDT']);
+  });
+
+  it('aggregates round trips across bots on different accounts and symbols', async () => {
+    const { service, bots, orders } = makeService();
+    bots.listByUserId.mockResolvedValue([
+      strategyBot({ id: 'bot-1' }),
+      strategyBot({
+        id: 'bot-2',
+        paperAccountId: 'acc-2',
+        symbol: 'ETHUSDT',
+      }),
+    ]);
+    orders.listFilledByBotIds.mockResolvedValue([
+      order({ id: 'o-1', botId: 'bot-1', symbol: 'BTCUSDT' }),
+      order({
+        id: 'o-2',
+        botId: 'bot-1',
+        side: 'sell',
+        avgFillPrice: '110',
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+      }),
+      order({
+        id: 'o-3',
+        botId: 'bot-2',
+        accountId: 'acc-2',
+        symbol: 'ETHUSDT',
+        avgFillPrice: '2000',
+      }),
+      order({
+        id: 'o-4',
+        botId: 'bot-2',
+        accountId: 'acc-2',
+        symbol: 'ETHUSDT',
+        side: 'sell',
+        avgFillPrice: '2200',
+        createdAt: new Date('2026-01-03T00:00:00Z'),
+      }),
+    ]);
+
+    const result = await service.strategyTradeAnalytics(
+      'user-1',
+      'sma-crossover',
+    );
+
+    expect(result.botIds).toEqual(['bot-1', 'bot-2']);
+    expect(result.symbols).toEqual(['BTCUSDT', 'ETHUSDT']);
+    expect(result.metrics.tradeCount).toBe(2);
+    expect(result.metrics.winCount).toBe(2);
+    expect(result.metrics.netPnl).toBe('210.00000000');
+    expect(result.trades).toHaveLength(2);
+  });
+
+  it('reports empty metrics when the bots have no filled orders', async () => {
+    const { service, bots, orders } = makeService();
+    bots.listByUserId.mockResolvedValue([strategyBot()]);
+    orders.listFilledByBotIds.mockResolvedValue([]);
+
+    const result = await service.strategyTradeAnalytics(
+      'user-1',
+      'sma-crossover',
+    );
+
+    expect(result.metrics.tradeCount).toBe(0);
+    expect(result.trades).toEqual([]);
+    expect(result.botIds).toEqual(['bot-1']);
   });
 });
 

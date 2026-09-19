@@ -81,6 +81,21 @@ export function botTradeAnalytics(botId: string): Promise<BotTradeAnalytics> {
   return apiRequest<BotTradeAnalytics>(`/api/analytics/bots/${botId}/trades`, authHeader());
 }
 
+export interface StrategyTradeAnalytics {
+  strategyId: string;
+  botIds: string[];
+  symbols: string[];
+  metrics: TradeMetrics;
+  trades: RoundTripTrade[];
+}
+
+export function strategyTradeAnalytics(strategyId: string): Promise<StrategyTradeAnalytics> {
+  return apiRequest<StrategyTradeAnalytics>(
+    `/api/analytics/strategies/${encodeURIComponent(strategyId)}/trades`,
+    authHeader(),
+  );
+}
+
 export interface PeriodReturn {
   granularity: "day" | "week" | "month";
   label: string;

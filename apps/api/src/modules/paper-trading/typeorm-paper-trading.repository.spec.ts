@@ -124,6 +124,44 @@ describe('TypeOrmPaperOrderRepository.listFilledByAccountAndBot', () => {
   });
 });
 
+describe('TypeOrmPaperOrderRepository.listFilledByBotIds', () => {
+  type BotIdsFindOptions = {
+    where: Record<string, unknown>;
+    order: { createdAt: 'ASC' };
+    take?: number;
+  };
+
+  function makeOrderRepo() {
+    const find = vi.fn(
+      async (_options?: BotIdsFindOptions): Promise<never[]> => [],
+    );
+    const repo = { find };
+    const impl = new TypeOrmPaperOrderRepository(repo as never);
+    return { impl, find };
+  }
+
+  it('matches any of the bot ids with a positive fill, ascending', async () => {
+    const { impl, find } = makeOrderRepo();
+    await impl.listFilledByBotIds(['bot-1', 'bot-2'], 5000);
+
+    const options = find.mock.calls[0][0] as BotIdsFindOptions;
+    const operator = options.where.botId as { _type: string; _value: string[] };
+    expect(operator._type).toBe('in');
+    expect(operator._value).toEqual(['bot-1', 'bot-2']);
+    expect((options.where.filledQuantity as { _type: string })._type).toBe(
+      'moreThan',
+    );
+    expect(options.order.createdAt).toBe('ASC');
+    expect(options.take).toBe(5000);
+  });
+
+  it('returns an empty list without querying when no bot ids are given', async () => {
+    const { impl, find } = makeOrderRepo();
+    await expect(impl.listFilledByBotIds([])).resolves.toEqual([]);
+    expect(find).not.toHaveBeenCalled();
+  });
+});
+
 describe('TypeOrmPaperPortfolioRepository.listByAccount', () => {
   type PortfolioFindOptions = {
     where: { accountId: string };
