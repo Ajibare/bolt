@@ -233,6 +233,11 @@ export default function BotsPage() {
     brokersQuery.data?.find((executor) => executor.provider === "bybit");
   const brokerAvailable = liveBroker?.available ?? false;
   const brokerEnvironment = liveBroker?.environment ?? "paper";
+  const brokerName = liveBroker?.provider === "bybit" ? "Bybit" : "Binance";
+  const brokerEnvHint =
+    liveBroker?.provider === "bybit"
+      ? "BYBIT_API_KEY/BYBIT_API_SECRET"
+      : "BINANCE_API_KEY/BINANCE_API_SECRET";
 
   function isModeAvailable(mode: string): boolean {
     if (mode === "PAPER") {
@@ -313,7 +318,8 @@ export default function BotsPage() {
         </h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           Bind a strategy to an account, pick an execution mode, and choose inherited risk limits.
-          PAPER runs simulated; DEMO/TESTNET/LIVE route risk-checked orders to Bybit.
+          PAPER runs simulated; DEMO/TESTNET/LIVE route risk-checked orders to the configured live
+          broker.
         </p>
         <Link
           href="/live-broker"
@@ -508,8 +514,8 @@ export default function BotsPage() {
           </div>
           <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
             PAPER runs against the simulated broker. DEMO, TESTNET and LIVE route risk-checked
-            orders to Bybit (mode↔environment match with BYBIT_API_KEY/BYBIT_API_SECRET; the server
-            enforces this — the selection below is advisory).
+            orders to {brokerName} (mode↔environment match with {brokerEnvHint}; the server enforces
+            this — the selection below is advisory).
           </p>
           {executionMode !== "PAPER" ? (
             brokerAvailable ? (
@@ -519,8 +525,7 @@ export default function BotsPage() {
               </p>
             ) : (
               <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                Live broker not configured — set BYBIT_API_KEY/BYBIT_API_SECRET to enable live
-                modes.
+                Live broker not configured — set {brokerEnvHint} to enable live modes.
               </p>
             )
           ) : null}

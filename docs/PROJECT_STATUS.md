@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-09-19 (Phase 11 — increment 13: in-app notification center)
 **Branch:** `main`
-**Last commit:** `152d475` — "feat: add in-app notification center" (Phase 11)
+**Last commit:** `1358aa5`
 
 ---
 
@@ -14,22 +14,22 @@
 
 ## Overall Status
 
-| Phase | Name                       | Status                                                      |
-| ----- | -------------------------- | ----------------------------------------------------------- |
-| 0     | Foundation                 | COMPLETE                                                    |
-| 1     | Authentication & Users     | COMPLETE (unit-verified; live-service pending)              |
-| 2     | Market Data                | COMPLETE (unit-verified; live-service pending)              |
-| 3     | Strategy Engine            | COMPLETE (unit-verified)                                    |
-| 4     | Backtesting Engine         | COMPLETE (unit-verified, steps A–D)                         |
-| 5     | Risk Engine                | COMPLETE (unit-verified)                                    |
-| 6     | Paper Trading              | COMPLETE (unit-verified, steps A–D)                         |
-| 7     | Bot Engine                 | COMPLETE (unit + E2E verified)                              |
-| 8     | Binance Testnet (primary)  | IN PROGRESS                                                 |
-| 9     | Live Trading               | NOT STARTED                                                 |
-| 10    | Portfolio & Analytics      | COMPLETE (increment 12)                                 |
-| 11    | Notifications & Monitoring | IN PROGRESS (increment 13: in-app notification center)  |
-| 12    | AI Features                | NOT STARTED                                                 |
-| 13    | Production Hardening       | NOT STARTED                                                 |
+| Phase | Name                       | Status                                                 |
+| ----- | -------------------------- | ------------------------------------------------------ |
+| 0     | Foundation                 | COMPLETE                                               |
+| 1     | Authentication & Users     | COMPLETE (unit-verified; live-service pending)         |
+| 2     | Market Data                | COMPLETE (unit-verified; live-service pending)         |
+| 3     | Strategy Engine            | COMPLETE (unit-verified)                               |
+| 4     | Backtesting Engine         | COMPLETE (unit-verified, steps A–D)                    |
+| 5     | Risk Engine                | COMPLETE (unit-verified)                               |
+| 6     | Paper Trading              | COMPLETE (unit-verified, steps A–D)                    |
+| 7     | Bot Engine                 | COMPLETE (unit + E2E verified)                         |
+| 8     | Binance Testnet (primary)  | IN PROGRESS                                            |
+| 9     | Live Trading               | NOT STARTED                                            |
+| 10    | Portfolio & Analytics      | COMPLETE (increment 12)                                |
+| 11    | Notifications & Monitoring | IN PROGRESS (increment 13: in-app notification center) |
+| 12    | AI Features                | NOT STARTED                                            |
+| 13    | Production Hardening       | NOT STARTED                                            |
 
 ---
 
@@ -123,9 +123,10 @@
 
 - Increment 8: bot creation execution-mode selector (AGENTS.md §11)
   - The `/bots` create form now offers PAPER / DEMO / TESTNET / LIVE buttons backed by
-    `GET /api/brokers` (advisory): live modes are disabled until a Bybit credential pair is
-    configured AND the mode matches `BYBIT_ENVIRONMENT` (`DEMO→demo`, `TESTNET→testnet`,
-    `LIVE→mainnet`), mirroring the server-side gate in `BotsService.assertExecutionModeAllowed`
+    `GET /api/brokers` (advisory): live modes are disabled until a live credential pair is
+    configured (Binance preferred, else Bybit) AND the mode matches the active provider's
+    environment (`DEMO→demo` [Bybit only], `TESTNET→testnet`, `LIVE→mainnet`), mirroring the
+    server-side gate in `BotsService.assertExecutionModeAllowed`
     (which stays authoritative — the UI only surfaces the same rule). The selected mode is sent in
     the existing `CreateBotInput.executionMode`
   - Live-capable bots show a colored mode badge (PAPER zinc / DEMO emerald / TESTNET sky / LIVE red)
@@ -592,10 +593,11 @@ String(value)` turned `NULL` money columns into the string `"null"`, so a bot wi
    a restart never auto-closes an OPEN breaker. `assertTradingAllowed` persists each trip;
    `reset` deletes the row (AGENTS.md §19).
 
-9. **Single configured broker account (MVP)** — **KNOWN, 2026-09-15**: Bybit credentials are
-   process-global env, so every live account maps to the same broker account. The position
-   reconciliation compares each live account's local ledger against that one broker view; a user
-   running several Bolt accounts against one Bybit account will see cross-account divergences
+9. **Single configured broker account (MVP)** — **KNOWN, 2026-09-15**: live broker credentials
+   are process-global env (Binance preferred, else Bybit), so every live account maps to the same
+   broker account. The position reconciliation compares each live account's local ledger against
+   that one broker view; a user running several Bolt accounts against one broker account will see
+   cross-account divergences
    until per-account broker accounts are supported. Detection-only, so no wrong numbers are ever
    written (AGENTS.md §17).
 
@@ -618,7 +620,6 @@ NestJS API (apps/api, port 4000)
   │ @trading-bolt/indicators                     │
   │ @trading-bolt/trading-engine                 │
   │ @trading-bolt/risk-engine                    │
-  │ @trading-bolt/backtesting                    │
   │ @trading-bolt/broker-adapters (PaperBroker)  │
   └──────────────────────────────────────────────┘
     ↓
@@ -633,78 +634,78 @@ BullMQ (BotExecutionProcessor)
 
 ## Current Database Migrations
 
-| Migration       | Name                      | Purpose                                                                          |
-| --------------- | ------------------------- | -------------------------------------------------------------------------------- |
-| `1700000000000` | `CreateAppMeta`           | Application metadata table                                                       |
-| `1700000000001` | `CreateUsers`             | Users table                                                                      |
-| `1700000000002` | `CreateSessions`          | Sessions table (JWT refresh tokens)                                              |
-| `1700000000003` | `CreateMarketCandles`     | Market candle storage                                                            |
-| `1700000000004` | `CreateBacktests`         | Backtest + BacktestTrade + BacktestEquityPoint                                   |
-| `1700000000005` | `CreatePaperTrading`      | Paper accounts, orders, positions, portfolio snapshots                           |
-| `1700000000006` | `CreateBots`              | Bots + bot_runs tables                                                           |
-| `1700000000007` | `CreateBotRunCycles`      | Per-cycle signal/order history for bot runs (idx run_id, run+seq)                |
-| `1700000000008` | `AddBrokerReconciliation` | `provider`/`broker_status`/`last_synced_at` on `paper_orders` for reconciliation |
-| `1700000000009` | `AddCircuitBreakers`      | Persistent `circuit_breakers` table (severity PK, reason, tripped_at)            |
-| `1700000000010` | `AddBinanceOcoBracket`    | OCO bracket params + status on binance orders                                    |
-| `1700000000011` | `AddBotOrderAttribution`  | `bot_id` on live orders (bot-scoped FIFO attribution)                            |
-| `1700000000012` | `AddLivePortfolioSnapshots` | Live-account equity curve snapshots (numeric(40,20))                           |
-| `1700000000013` | `AddNotifications`        | Per-user in-app notifications (type, severity, read_at)                          |
-| —               | Applied live              | Migrations `…000`–`…009` applied against Docker PostgreSQL on 2026-09-15 (10–13 pending) |
+| Migration       | Name                        | Purpose                                                                                  |
+| --------------- | --------------------------- | ---------------------------------------------------------------------------------------- |
+| `1700000000000` | `CreateAppMeta`             | Application metadata table                                                               |
+| `1700000000001` | `CreateUsers`               | Users table                                                                              |
+| `1700000000002` | `CreateSessions`            | Sessions table (JWT refresh tokens)                                                      |
+| `1700000000003` | `CreateMarketCandles`       | Market candle storage                                                                    |
+| `1700000000004` | `CreateBacktests`           | Backtest + BacktestTrade + BacktestEquityPoint                                           |
+| `1700000000005` | `CreatePaperTrading`        | Paper accounts, orders, positions, portfolio snapshots                                   |
+| `1700000000006` | `CreateBots`                | Bots + bot_runs tables                                                                   |
+| `1700000000007` | `CreateBotRunCycles`        | Per-cycle signal/order history for bot runs (idx run_id, run+seq)                        |
+| `1700000000008` | `AddBrokerReconciliation`   | `provider`/`broker_status`/`last_synced_at` on `paper_orders` for reconciliation         |
+| `1700000000009` | `AddCircuitBreakers`        | Persistent `circuit_breakers` table (severity PK, reason, tripped_at)                    |
+| `1700000000010` | `AddBinanceOcoBracket`      | OCO bracket params + status on binance orders                                            |
+| `1700000000011` | `AddBotOrderAttribution`    | `bot_id` on live orders (bot-scoped FIFO attribution)                                    |
+| `1700000000012` | `AddLivePortfolioSnapshots` | Live-account equity curve snapshots (numeric(40,20))                                     |
+| `1700000000013` | `AddNotifications`          | Per-user in-app notifications (type, severity, read_at)                                  |
+| —               | Applied live                | Migrations `…000`–`…009` applied against Docker PostgreSQL on 2026-09-15 (10–13 pending) |
 
 ---
 
 ## Current API Endpoints
 
-| Method | Path                                  | Auth | Purpose                              |
-| ------ | ------------------------------------- | ---- | ------------------------------------ |
-| GET    | `/api/health`                         | No   | Liveness check                       |
-| GET    | `/api/ready`                          | No   | Readiness check (DB/Redis)           |
-| POST   | `/api/auth/register`                  | No   | User registration                    |
-| POST   | `/api/auth/login`                     | No   | User login                           |
-| POST   | `/api/auth/logout`                    | Yes  | Logout (revoke refresh)              |
-| GET    | `/api/auth/me`                        | Yes  | Current user                         |
-| GET    | `/api/markets/symbols`                | Yes  | Supported symbols                    |
-| GET    | `/api/markets/:symbol/candles`        | Yes  | Candle history                       |
-| GET    | `/api/markets/:symbol/ticker`         | Yes  | Latest ticker                        |
-| GET    | `/api/strategies`                     | Yes  | List registered strategies           |
-| POST   | `/api/strategies/evaluate`            | Yes  | Evaluate strategy on candles         |
-| POST   | `/api/backtests`                      | Yes  | Run + store backtest                 |
-| GET    | `/api/backtests`                      | Yes  | List stored backtests                |
-| GET    | `/api/backtests/:id`                  | Yes  | Backtest detail                      |
-| POST   | `/api/paper/accounts`                 | Yes  | Create paper account                 |
-| GET    | `/api/paper/accounts`                 | Yes  | List paper accounts                  |
-| POST   | `/api/paper/accounts/:id/orders`      | Yes  | Place paper order                    |
-| GET    | `/api/paper/accounts/:id/orders`      | Yes  | List orders                          |
-| GET    | `/api/paper/accounts/:id/positions`   | Yes  | List positions                       |
-| GET    | `/api/paper/accounts/:id/portfolio`   | Yes  | Portfolio summary                    |
-| POST   | `/api/bots`                           | Yes  | Create bot                           |
-| GET    | `/api/bots`                           | Yes  | List user's bots                     |
-| GET    | `/api/bots/:botId`                    | Yes  | Get bot detail                       |
-| GET    | `/api/bots/:botId/monitor`            | Yes  | Monitor bot + portfolio + position   |
-| GET    | `/api/bots/:botId/runs`               | Yes  | List bot runs                        |
-| GET    | `/api/bots/:botId/runs/:runId/cycles` | Yes  | List cycles for a bot run            |
-| POST   | `/api/bots/:botId/start`              | Yes  | Start bot                            |
-| POST   | `/api/bots/:botId/pause`              | Yes  | Pause bot                            |
-| POST   | `/api/bots/:botId/resume`             | Yes  | Resume bot                           |
-| POST   | `/api/bots/:botId/stop`               | Yes  | Stop bot                             |
-| POST   | `/api/bots/:botId/emergency-stop`     | Yes  | Emergency stop (flatten live + stop) |
-| POST   | `/api/bots/:botId/recover`            | Yes  | Recover bot from ERROR               |
-| GET    | `/api/brokers`                        | Yes  | List executors (no credentials)      |
-| GET    | `/api/brokers/account`                | Yes  | Live broker account monitor view     |
-| POST   | `/api/brokers/orders/:orderId/cancel` | Yes  | Cancel a live order                  |
-| GET    | `/api/analytics/portfolio/:accountId` | Yes  | Portfolio equity curve + metrics     |
-| GET    | `/api/analytics/trades/:accountId`    | Yes  | FIFO round trips + trade metrics     |
-| GET    | `/api/analytics/bots/:botId/trades`   | Yes  | FIFO metrics for one bot             |
-| GET    | `/api/analytics/strategies/:strategyId/trades` | Yes  | FIFO metrics across a strategy |
-| GET    | `/api/analytics/strategies/compare`   | Yes  | Strategy-vs-strategy FIFO summary    |
-| GET    | `/api/analytics/live/:accountId/trades` | Yes  | FIFO metrics from broker fills     |
-| GET    | `/api/analytics/live/:accountId/portfolio` | Yes  | Live equity curve + metrics      |
-| GET    | `/api/analytics/performance/:accountId` | Yes  | Combined performance report       |
-| GET    | `/api/analytics/performance/:accountId/export` | Yes  | Performance report CSV         |
-| GET    | `/api/notifications`                  | Yes  | List notifications (unread first)    |
-| GET    | `/api/notifications/unread-count`     | Yes  | Unread count                        |
-| POST   | `/api/notifications/:id/read`         | Yes  | Mark one own notification read       |
-| POST   | `/api/notifications/read-all`         | Yes  | Mark all own notifications read      |
+| Method | Path                                           | Auth | Purpose                              |
+| ------ | ---------------------------------------------- | ---- | ------------------------------------ |
+| GET    | `/api/health`                                  | No   | Liveness check                       |
+| GET    | `/api/ready`                                   | No   | Readiness check (DB/Redis)           |
+| POST   | `/api/auth/register`                           | No   | User registration                    |
+| POST   | `/api/auth/login`                              | No   | User login                           |
+| POST   | `/api/auth/logout`                             | Yes  | Logout (revoke refresh)              |
+| GET    | `/api/auth/me`                                 | Yes  | Current user                         |
+| GET    | `/api/markets/symbols`                         | Yes  | Supported symbols                    |
+| GET    | `/api/markets/:symbol/candles`                 | Yes  | Candle history                       |
+| GET    | `/api/markets/:symbol/ticker`                  | Yes  | Latest ticker                        |
+| GET    | `/api/strategies`                              | Yes  | List registered strategies           |
+| POST   | `/api/strategies/evaluate`                     | Yes  | Evaluate strategy on candles         |
+| POST   | `/api/backtests`                               | Yes  | Run + store backtest                 |
+| GET    | `/api/backtests`                               | Yes  | List stored backtests                |
+| GET    | `/api/backtests/:id`                           | Yes  | Backtest detail                      |
+| POST   | `/api/paper/accounts`                          | Yes  | Create paper account                 |
+| GET    | `/api/paper/accounts`                          | Yes  | List paper accounts                  |
+| POST   | `/api/paper/accounts/:id/orders`               | Yes  | Place paper order                    |
+| GET    | `/api/paper/accounts/:id/orders`               | Yes  | List orders                          |
+| GET    | `/api/paper/accounts/:id/positions`            | Yes  | List positions                       |
+| GET    | `/api/paper/accounts/:id/portfolio`            | Yes  | Portfolio summary                    |
+| POST   | `/api/bots`                                    | Yes  | Create bot                           |
+| GET    | `/api/bots`                                    | Yes  | List user's bots                     |
+| GET    | `/api/bots/:botId`                             | Yes  | Get bot detail                       |
+| GET    | `/api/bots/:botId/monitor`                     | Yes  | Monitor bot + portfolio + position   |
+| GET    | `/api/bots/:botId/runs`                        | Yes  | List bot runs                        |
+| GET    | `/api/bots/:botId/runs/:runId/cycles`          | Yes  | List cycles for a bot run            |
+| POST   | `/api/bots/:botId/start`                       | Yes  | Start bot                            |
+| POST   | `/api/bots/:botId/pause`                       | Yes  | Pause bot                            |
+| POST   | `/api/bots/:botId/resume`                      | Yes  | Resume bot                           |
+| POST   | `/api/bots/:botId/stop`                        | Yes  | Stop bot                             |
+| POST   | `/api/bots/:botId/emergency-stop`              | Yes  | Emergency stop (flatten live + stop) |
+| POST   | `/api/bots/:botId/recover`                     | Yes  | Recover bot from ERROR               |
+| GET    | `/api/brokers`                                 | Yes  | List executors (no credentials)      |
+| GET    | `/api/brokers/account`                         | Yes  | Live broker account monitor view     |
+| POST   | `/api/brokers/orders/:orderId/cancel`          | Yes  | Cancel a live order                  |
+| GET    | `/api/analytics/portfolio/:accountId`          | Yes  | Portfolio equity curve + metrics     |
+| GET    | `/api/analytics/trades/:accountId`             | Yes  | FIFO round trips + trade metrics     |
+| GET    | `/api/analytics/bots/:botId/trades`            | Yes  | FIFO metrics for one bot             |
+| GET    | `/api/analytics/strategies/:strategyId/trades` | Yes  | FIFO metrics across a strategy       |
+| GET    | `/api/analytics/strategies/compare`            | Yes  | Strategy-vs-strategy FIFO summary    |
+| GET    | `/api/analytics/live/:accountId/trades`        | Yes  | FIFO metrics from broker fills       |
+| GET    | `/api/analytics/live/:accountId/portfolio`     | Yes  | Live equity curve + metrics          |
+| GET    | `/api/analytics/performance/:accountId`        | Yes  | Combined performance report          |
+| GET    | `/api/analytics/performance/:accountId/export` | Yes  | Performance report CSV               |
+| GET    | `/api/notifications`                           | Yes  | List notifications (unread first)    |
+| GET    | `/api/notifications/unread-count`              | Yes  | Unread count                         |
+| POST   | `/api/notifications/:id/read`                  | Yes  | Mark one own notification read       |
+| POST   | `/api/notifications/read-all`                  | Yes  | Mark all own notifications read      |
 
 ---
 
@@ -765,7 +766,7 @@ UI today), re-evaluation of the single-broker-account model (Known Problem #9).
    first) and marks read/all-read strictly for the requesting user (AGENTS.md §23). `BotsService`
    emits `BOT_STARTED`/`BOT_PAUSED`/`BOT_RESUMED`/`BOT_STOPPED` (info) and
    `CIRCUIT_BREAKER_TRIGGERED` (error) after successful transitions only. Web `/notifications` page
-   + dashboard link. Unit tests: api **371** (**637 total**), web typecheck/lint/`next build` pass.
+   - dashboard link. Unit tests: api **371** (**637 total**), web typecheck/lint/`next build` pass.
 2. **Phase 9 — Increment 12: strategy-vs-strategy comparison (2026-09-19)** — `GET
 /api/analytics/strategies/compare` returns one FIFO summary per strategy the requesting user
    runs, sorted by net P&L (ties by strategy id for deterministic ordering). Shares the
@@ -851,11 +852,11 @@ UI today), re-evaluation of the single-broker-account model (Known Problem #9).
    (read-only aggregation). Unit tests: api **316** (periodReturns 9, service report 2; 582 total),
    web typecheck/lint/`next build` pass.
 10. **Phase 9 — Increment 4: trade analytics UI (2026-09-18)** — extended the `/analytics` page
-   with the FIFO trade metrics from `GET /api/analytics/trades/:accountId` (trade count, win rate, net
-   P&L, profit factor with a `—` when no losing trades, average win/loss as metric cards) plus a compact
-   recent-trades table (Long/Short badge, symbol, size, entry/exit, close time, net P&L with tone; empty
-   state). Added `tradeAnalytics()`/types + `formatNumber` to `lib/analytics.ts`. No API/backend changes;
-   web typecheck/lint/`next build` pass.
+    with the FIFO trade metrics from `GET /api/analytics/trades/:accountId` (trade count, win rate, net
+    P&L, profit factor with a `—` when no losing trades, average win/loss as metric cards) plus a compact
+    recent-trades table (Long/Short badge, symbol, size, entry/exit, close time, net P&L with tone; empty
+    state). Added `tradeAnalytics()`/types + `formatNumber` to `lib/analytics.ts`. No API/backend changes;
+    web typecheck/lint/`next build` pass.
 11. **Phase 9 — Increment 3: FIFO trade analytics (2026-09-18)** — added
     `GET /api/analytics/trades/:accountId` (JWT-gated, ownership-scoped) returning win rate, win/loss
     counts, gross profit/loss, average win/loss, net P&L, total fees and profit factor (`null` when there

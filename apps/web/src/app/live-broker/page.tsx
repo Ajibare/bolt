@@ -126,11 +126,13 @@ export default function LiveBrokerPage() {
                 Live broker not configured
               </h2>
               <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-                Set <span className="font-mono">BYBIT_API_KEY</span> and{" "}
-                <span className="font-mono">BYBIT_API_SECRET</span> (plus{" "}
-                <span className="font-mono">BYBIT_ENVIRONMENT</span>) in the API environment to
-                enable live executors. Nothing is exposed here — the broker is only reachable from
-                the backend.
+                Set <span className="font-mono">BINANCE_API_KEY</span> and{" "}
+                <span className="font-mono">BINANCE_API_SECRET</span> (plus{" "}
+                <span className="font-mono">BINANCE_ENV</span>, testnet by default) in the API
+                environment to enable the primary live executor, or{" "}
+                <span className="font-mono">BYBIT_API_KEY</span>/
+                <span className="font-mono">BYBIT_API_SECRET</span> for the optional Bybit executor.
+                Nothing is exposed here — the broker is only reachable from the backend.
               </p>
             </section>
           ) : null}
