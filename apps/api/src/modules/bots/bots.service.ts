@@ -27,6 +27,7 @@ import {
 } from './bot.repository.js';
 import { canStart, transition } from './bot-lifecycle.js';
 import { BotScheduler } from './bot-scheduler.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 
 /** Execution modes that run against the live broker (AGENTS.md §11). */
 const LIVE_EXECUTION_MODES = ['DEMO', 'TESTNET', 'LIVE'] as const;
@@ -79,6 +80,7 @@ export class BotsService {
     private readonly scheduler: BotScheduler,
     private readonly brokers: BrokersService,
     private readonly liveTrading: LiveTradingService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async create(userId: string, dto: CreateBotDto): Promise<BotEntity> {
@@ -153,6 +155,13 @@ export class BotsService {
       action: 'start',
       scheduledAt: Date.now(),
     });
+    await this.notify(
+      bot,
+      'info',
+      'BOT_STARTED',
+      `Bot "${bot.name}" started`,
+      `Execution mode ${bot.executionMode} on ${bot.symbol} (${bot.interval})`,
+    );
     return bot;
   }
 
@@ -160,14 +169,22 @@ export class BotsService {
     const bot = await this.ownedBot(userId, botId);
     bot.status = transition(bot.status, 'PAUSED');
     await this.runsSaveStatus(bot.id, 'PAUSED');
-    return this.bots.save(bot);
+    const saved = await this.bots.save(bot);
+    await this.notify(
+      saved,
+      'info',
+      'BOT_PAUSED',
+      `Bot "${saved.name}" paused`,
+      `${saved.symbol} (${saved.interval}) paused — no new signals are executed.`,
+    );
+    return saved;
   }
 
   async resume(userId: string, botId: string): Promise<BotEntity> {
     const bot = await this.ownedBot(userId, botId);
     bot.status = transition(bot.status, 'RUNNING');
     await this.runsSaveStatus(bot.id, 'RUNNING');
-    await this.bots.save(bot);
+    const saved = await this.bots.save(bot);
     const active = await this.runs.findActiveByBotId(bot.id);
     if (active) {
       await this.scheduler.enqueue({
@@ -177,7 +194,14 @@ export class BotsService {
         scheduledAt: Date.now(),
       });
     }
-    return bot;
+    await this.notify(
+      saved,
+      'info',
+      'BOT_RESUMED',
+      `Bot "${saved.name}" resumed`,
+      `${saved.symbol} (${saved.interval}) is running again.`,
+    );
+    return saved;
   }
 
   async stop(userId: string, botId: string): Promise<BotEntity> {
@@ -185,7 +209,15 @@ export class BotsService {
     transition(bot.status, 'STOPPING');
     bot.status = transition('STOPPING', 'STOPPED');
     await this.runsStopActive(bot.id);
-    return this.bots.save(bot);
+    const saved = await this.bots.save(bot);
+    await this.notify(
+      saved,
+      'info',
+      'BOT_STOPPED',
+      `Bot "${saved.name}" stopped`,
+      `${saved.symbol} (${saved.interval}) is no longer running.`,
+    );
+    return saved;
   }
 
   /**
@@ -208,7 +240,14 @@ export class BotsService {
       transition(bot.status, 'STOPPING');
       bot.status = transition('STOPPING', 'STOPPED');
       await this.runsStopActive(bot.id);
-      await this.bots.save(bot);
+      const saved = await this.bots.save(bot);
+      await this.notify(
+        saved,
+        'error',
+        'CIRCUIT_BREAKER_TRIGGERED',
+        `Emergency stop on "${saved.name}"`,
+        `All open orders and the position were flattened before the bot stopped (AGENTS.md §19).`,
+      );
     }
     return bot;
   }
@@ -279,6 +318,23 @@ export class BotsService {
       throw new NotFoundException('Bot not found');
     }
     return bot;
+  }
+
+  /** Persists an in-app notification for the bot's owner (AGENTS.md §25). */
+  private async notify(
+    bot: BotEntity,
+    severity: 'info' | 'warn' | 'error',
+    type: string,
+    title: string,
+    body: string,
+  ): Promise<void> {
+    await this.notifications.notifyUser(bot.userId, {
+      type,
+      severity,
+      title,
+      body,
+      link: '/bots',
+    });
   }
 
   private async runsSaveStatus(

@@ -7,6 +7,7 @@ import { LiveTradingModule } from '../live-trading/live-trading.module.js';
 import { MarketsModule } from '../markets/markets.module.js';
 import { PaperTradingModule } from '../paper-trading/paper-trading.module.js';
 import { UsersModule } from '../users/users.module.js';
+import { NotificationsModule } from '../notifications/notifications.module.js';
 import {
   BotEntity,
   BotRunCycleEntity,
@@ -37,6 +38,7 @@ import { BotScheduler, BullMqBotScheduler } from './bot-scheduler.js';
     BrokersModule,
     LiveTradingModule,
     UsersModule,
+    NotificationsModule,
   ],
   controllers: [BotsController],
   providers: [

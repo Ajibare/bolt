@@ -14,6 +14,7 @@ import { ReconciliationModule } from './modules/reconciliation/reconciliation.mo
 import { LiveTradingModule } from './modules/live-trading/live-trading.module.js';
 import { AnalyticsModule } from './modules/analytics/analytics.module.js';
 import { BotsModule } from './modules/bots/bots.module.js';
+import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { RedisModule } from './redis/redis.module.js';
 
 @Module({
@@ -59,6 +60,7 @@ import { RedisModule } from './redis/redis.module.js';
     LiveTradingModule,
     AnalyticsModule,
     BotsModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

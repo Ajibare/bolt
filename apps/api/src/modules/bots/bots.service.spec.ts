@@ -38,6 +38,11 @@ function createService(overrides: {
   const liveTrading = {
     emergencyFlatten: vi.fn(async () => undefined),
   };
+  const notifications = {
+    notifyUser: vi.fn(
+      async (_userId: string, _input: Record<string, unknown>) => undefined,
+    ),
+  };
   const service = new BotsService(
     bots as never,
     runs as never,
@@ -46,8 +51,17 @@ function createService(overrides: {
     scheduler as unknown as BotScheduler,
     brokers as unknown as BrokersService,
     liveTrading as unknown as LiveTradingService,
+    notifications as never,
   );
-  return { service, bots, runs, paperTrading, brokers, liveTrading };
+  return {
+    service,
+    bots,
+    runs,
+    paperTrading,
+    brokers,
+    liveTrading,
+    notifications,
+  };
 }
 
 function bot(executionMode: string) {
@@ -55,6 +69,7 @@ function bot(executionMode: string) {
     id: 'bot-1',
     userId: 'user-1',
     paperAccountId: 'acc-1',
+    name: 'Bolt 1',
     symbol: 'BTCUSDT',
     status: 'RUNNING',
     executionMode,
@@ -177,5 +192,72 @@ describe('BotsService.emergencyStop', () => {
     );
 
     expect(b.status).toBe('STOPPED');
+  });
+});
+
+describe('BotsService lifecycle notifications', () => {
+  it('notifies when a bot is started', async () => {
+    const { service, bots, runs, notifications } = createService({});
+    const b = { ...bot('PAPER'), status: 'DRAFT' };
+    bots.findByUserIdAndId.mockResolvedValue(b);
+    runs.findActiveByBotId.mockResolvedValue(null);
+    runs.save.mockResolvedValue({ id: 'run-9', status: 'STARTING' });
+
+    await service.start('user-1', 'bot-1');
+
+    expect(notifications.notifyUser).toHaveBeenCalledWith('user-1', {
+      type: 'BOT_STARTED',
+      severity: 'info',
+      title: 'Bot "Bolt 1" started',
+      body: expect.any(String),
+      link: '/bots',
+    });
+  });
+
+  it('notifies on pause, resume and stop', async () => {
+    const { service, bots, runs, notifications } = createService({});
+    bots.findByUserIdAndId.mockResolvedValue(bot('PAPER'));
+    runs.findActiveByBotId.mockResolvedValue(null);
+
+    await service.pause('user-1', 'bot-1');
+    await service.resume('user-1', 'bot-1');
+    await service.stop('user-1', 'bot-1');
+
+    const types = notifications.notifyUser.mock.calls.map(
+      (call) => call[1].type as string,
+    );
+    expect(types).toEqual(['BOT_PAUSED', 'BOT_RESUMED', 'BOT_STOPPED']);
+  });
+
+  it('emits a CIRCUIT_BREAKER_TRIGGERED error notification on emergency stop', async () => {
+    const { service, bots, runs, notifications } = createService({});
+    const b = { ...bot('PAPER'), status: 'RUNNING' };
+    bots.findByUserIdAndId.mockResolvedValue(b);
+    runs.findActiveByBotId.mockResolvedValue({
+      id: 'run-1',
+      status: 'RUNNING',
+    });
+
+    await service.emergencyStop('user-1', 'bot-1');
+
+    expect(notifications.notifyUser).toHaveBeenCalledWith('user-1', {
+      type: 'CIRCUIT_BREAKER_TRIGGERED',
+      severity: 'error',
+      title: expect.stringContaining('Emergency stop'),
+      body: expect.any(String),
+      link: '/bots',
+    });
+  });
+
+  it('does not notify when an action is rejected by the state machine', async () => {
+    const { service, bots, notifications } = createService({});
+    const b = { ...bot('PAPER'), status: 'PAUSED' };
+    bots.findByUserIdAndId.mockResolvedValue(b);
+
+    await expect(service.start('user-1', 'bot-1')).rejects.toThrow(
+      'Cannot start a bot in status PAUSED',
+    );
+
+    expect(notifications.notifyUser).not.toHaveBeenCalled();
   });
 });
