@@ -2,7 +2,6 @@
 
 **Last updated:** 2026-09-19 (Phase 11 — increment 13: in-app notification center)
 **Branch:** `main`
-**Last commit:** `1358aa5`
 
 ---
 
