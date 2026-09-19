@@ -8,6 +8,7 @@
     "node": ">=20.0.0",
     "pnpm": ">=9.0.0"
   },
+  "packageManager": "pnpm@11.15.1",
   "scripts": {
     "dev": "pnpm --parallel -r run dev",
     "dev:web": "pnpm --filter web run dev",
@@ -26,7 +27,7 @@
     "db:migrate": "pnpm --filter api run db:migrate",
     "db:seed": "pnpm --filter api run db:seed",
     "worker": "pnpm --filter worker run dev",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "devDependencies": {
     "husky": "^9.1.7",
