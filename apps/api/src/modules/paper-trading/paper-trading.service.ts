@@ -18,6 +18,7 @@ import {
   type RiskConfig,
 } from '@trading-bolt/risk-engine';
 import { MarketsService } from '../markets/markets.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { CreatePaperAccountDto } from './dto/create-paper-account.dto.js';
 import { PlacePaperOrderDto } from './dto/place-paper-order.dto.js';
 import {
@@ -53,6 +54,7 @@ export class PaperTradingService {
     private readonly positions: PaperPositionRepository,
     private readonly portfolios: PaperPortfolioRepository,
     private readonly marketsService: MarketsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   createAccount(
@@ -132,6 +134,12 @@ export class PaperTradingService {
       config: riskConfig ?? DEFAULT_RISK_CONFIG,
     });
     if (!decision.approved) {
+      await this.notifyRiskRejected(
+        userId,
+        dto.symbol,
+        dto.side,
+        decision.reasons.join('; '),
+      );
       throw new BadRequestException(
         `Order rejected by risk engine: ${decision.reasons.join('; ')}`,
       );
