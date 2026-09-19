@@ -5,3 +5,5 @@ dist
 coverage
 pnpm-lock.yaml
 .git
+# Vendored Neon agent skills (upstream content, not repo-owned).
+.agents
