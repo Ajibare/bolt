@@ -108,6 +108,25 @@ export function liveTradeAnalytics(accountId: string): Promise<LiveTradeAnalytic
   return apiRequest<LiveTradeAnalytics>(`/api/analytics/live/${accountId}/trades`, authHeader());
 }
 
+export interface LivePortfolioAnalytics {
+  accountId: string;
+  startingCash: string;
+  currentEquity: string;
+  peakEquity: string;
+  totalReturn: string;
+  maxDrawdown: string;
+  realizedPnl: string;
+  lastPositionValue: string;
+  equityCurve: EquityCurvePoint[];
+}
+
+export function livePortfolioAnalytics(accountId: string): Promise<LivePortfolioAnalytics> {
+  return apiRequest<LivePortfolioAnalytics>(
+    `/api/analytics/live/${accountId}/portfolio`,
+    authHeader(),
+  );
+}
+
 export interface PeriodReturn {
   granularity: "day" | "week" | "month";
   label: string;

@@ -12,6 +12,7 @@ import { AddBrokerReconciliation1700000000008 } from './migrations/1700000000008
 import { AddCircuitBreakers1700000000009 } from './migrations/1700000000009-AddCircuitBreakers.js';
 import { AddBinanceOcoBracket1700000000010 } from './migrations/1700000000010-AddBinanceOcoBracket.js';
 import { AddBotOrderAttribution1700000000011 } from './migrations/1700000000011-AddBotOrderAttribution.js';
+import { AddLivePortfolioSnapshots1700000000012 } from './migrations/1700000000012-AddLivePortfolioSnapshots.js';
 
 /**
  * DataSource used by CLI-style migration and seed scripts run with tsx.
@@ -38,6 +39,7 @@ export function buildDataSource(
       AddCircuitBreakers1700000000009,
       AddBinanceOcoBracket1700000000010,
       AddBotOrderAttribution1700000000011,
+      AddLivePortfolioSnapshots1700000000012,
     ],
     synchronize: false,
     migrationsRun: false,

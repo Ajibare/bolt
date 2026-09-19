@@ -5,6 +5,7 @@ import {
   PaperAccountEntity,
   PaperPortfolioSnapshotEntity,
 } from '../paper-trading/entities/paper-trading.entity.js';
+import { LivePortfolioSnapshotEntity } from '../live-trading/live-portfolio-snapshot.entity.js';
 import { AnalyticsService } from './analytics.service.js';
 
 function makeService() {
@@ -28,14 +29,26 @@ function makeService() {
     provider: vi.fn(),
     environment: vi.fn(),
   };
+  const livePortfolio = {
+    listByAccount: vi.fn(),
+  };
   const service = new AnalyticsService(
     accounts as never,
     portfolios as never,
     orders as never,
     bots as never,
     brokers as never,
+    livePortfolio as never,
   );
-  return { service, accounts, portfolios, orders, bots, brokers };
+  return {
+    service,
+    accounts,
+    portfolios,
+    orders,
+    bots,
+    brokers,
+    livePortfolio,
+  };
 }
 
 function accountFor(
@@ -559,6 +572,92 @@ describe('AnalyticsService.liveTradeAnalytics', () => {
 
     expect(result.metrics.tradeCount).toBe(0);
     expect(result.trades).toEqual([]);
+  });
+});
+
+describe('AnalyticsService.livePortfolioAnalytics', () => {
+  function liveSnapshot(
+    overrides: Partial<LivePortfolioSnapshotEntity> = {},
+  ): LivePortfolioSnapshotEntity {
+    return {
+      id: 'ls-1',
+      accountId: 'acc-1',
+      equity: '1000',
+      cash: '700',
+      positionValue: '0',
+      realizedPnl: '0',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      ...overrides,
+    };
+  }
+
+  it('rejects an account that does not belong to the requesting user', async () => {
+    const { service, accounts, brokers } = makeService();
+    accounts.findByUserIdAndId.mockResolvedValue(null);
+
+    await expect(
+      service.livePortfolioAnalytics('user-1', 'acc-1'),
+    ).rejects.toMatchObject({ status: 404 });
+
+    expect(brokers.provider).not.toHaveBeenCalled();
+  });
+
+  it('rejects when no live broker is configured', async () => {
+    const { service, accounts, brokers, livePortfolio } = makeService();
+    accounts.findByUserIdAndId.mockResolvedValue(accountFor());
+    brokers.provider.mockReturnValue(null);
+
+    await expect(
+      service.livePortfolioAnalytics('user-1', 'acc-1'),
+    ).rejects.toMatchObject({ status: 400 });
+
+    expect(livePortfolio.listByAccount).not.toHaveBeenCalled();
+  });
+
+  it('derives equity metrics from the broker-observed snapshots', async () => {
+    const { service, accounts, brokers, livePortfolio } = makeService();
+    accounts.findByUserIdAndId.mockResolvedValue(accountFor());
+    brokers.provider.mockReturnValue('binance');
+    livePortfolio.listByAccount.mockResolvedValue([
+      liveSnapshot({
+        equity: '1000',
+        cash: '1000',
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+      }),
+      liveSnapshot({
+        id: 'ls-2',
+        equity: '1100',
+        cash: '900',
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+      }),
+    ]);
+
+    const result = await service.livePortfolioAnalytics('user-1', 'acc-1');
+
+    expect(livePortfolio.listByAccount).toHaveBeenCalledWith('acc-1');
+    expect(result.accountId).toBe('acc-1');
+    expect(result.startingCash).toBe('1000');
+    expect(result.currentEquity).toBe('1100');
+    expect(result.peakEquity).toBe('1100');
+    expect(result.totalReturn).toBe('0.10000000');
+    expect(result.maxDrawdown).toBe('0.00000000');
+    expect(result.realizedPnl).toBe('0');
+    expect(result.lastPositionValue).toBe('0');
+    expect(result.equityCurve).toHaveLength(2);
+  });
+
+  it('reports a flat zero window when no snapshots exist yet', async () => {
+    const { service, accounts, brokers, livePortfolio } = makeService();
+    accounts.findByUserIdAndId.mockResolvedValue(accountFor());
+    brokers.provider.mockReturnValue('binance');
+    livePortfolio.listByAccount.mockResolvedValue([]);
+
+    const result = await service.livePortfolioAnalytics('user-1', 'acc-1');
+
+    expect(result.startingCash).toBe('0');
+    expect(result.currentEquity).toBe('0');
+    expect(result.totalReturn).toBe('0.00000000');
+    expect(result.equityCurve).toEqual([]);
   });
 });
 

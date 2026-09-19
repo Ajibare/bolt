@@ -15,6 +15,7 @@ import {
   BrokersService,
   type LiveBrokerProvider,
 } from '../brokers/brokers.service.js';
+import { LivePortfolioRepository } from '../live-trading/live-portfolio.repository.js';
 import {
   equityCurve,
   metricsFromCurve,
@@ -96,6 +97,27 @@ export interface LiveTradeAnalytics {
   trades: RoundTripTrade[];
 }
 
+/**
+ * Live-account portfolio performance derived from the broker-observed equity
+ * snapshots only. Unlike the paper curve, position value and realized P&L are
+ * not yet derivable from spot balances, so they report `'0'`; every other
+ * field is honest broker-observed data.
+ */
+export interface LivePortfolioAnalytics {
+  accountId: string;
+  /** Cash reported in the earliest snapshot (first observed baseline). */
+  startingCash: string;
+  currentEquity: string;
+  peakEquity: string;
+  /** `(end - start) / start` as a decimal fraction (may be negative). */
+  totalReturn: string;
+  /** Most negative peak-to-trough drop as a decimal fraction (<= 0). */
+  maxDrawdown: string;
+  realizedPnl: string;
+  lastPositionValue: string;
+  equityCurve: EquityCurvePoint[];
+}
+
 /** Per-period performance breakdown over the account equity curve. */
 export interface PerformanceReport {
   accountId: string;
@@ -116,6 +138,7 @@ export class AnalyticsService {
     private readonly orders: PaperOrderRepository,
     private readonly bots: BotRepository,
     private readonly brokers: BrokersService,
+    private readonly livePortfolio: LivePortfolioRepository,
   ) {}
 
   async portfolioAnalytics(
@@ -226,6 +249,38 @@ export class AnalyticsService {
       environment: this.brokers.environment(),
       metrics: summarizeTrades(trades),
       trades: trades.slice(-RECENT_TRADES_LIMIT).reverse(),
+    };
+  }
+
+  /**
+   * Rebuilds the live-account equity curve and metrics from the broker-observed
+   * portfolio snapshots, mirroring `portfolioAnalytics` for paper accounts.
+   * Ownership is enforced before any snapshot read; the endpoint 400s when no
+   * live broker is configured (there can be no snapshots to report).
+   */
+  async livePortfolioAnalytics(
+    userId: string,
+    accountId: string,
+  ): Promise<LivePortfolioAnalytics> {
+    const account = await this.findAccount(userId, accountId);
+    if (!this.brokers.provider()) {
+      throw new BadRequestException('Live broker not configured');
+    }
+    const snapshots = await this.livePortfolio.listByAccount(account.id);
+    const curve = equityCurve(snapshots);
+    const metrics: PortfolioMetrics = metricsFromCurve(curve, '0');
+    const latest = snapshots[snapshots.length - 1] ?? null;
+
+    return {
+      accountId: account.id,
+      startingCash: snapshots[0]?.cash ?? '0',
+      currentEquity: metrics.endEquity,
+      peakEquity: metrics.peakEquity,
+      totalReturn: metrics.totalReturn,
+      maxDrawdown: metrics.maxDrawdown,
+      realizedPnl: '0',
+      lastPositionValue: latest ? latest.positionValue : '0',
+      equityCurve: curve,
     };
   }
 

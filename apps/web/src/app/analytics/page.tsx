@@ -12,6 +12,7 @@ import {
   formatNumber,
   formatRatio,
   liveTradeAnalytics,
+  livePortfolioAnalytics,
   performanceReport,
   strategyTradeAnalytics,
   type PeriodReturn,
@@ -278,6 +279,12 @@ export default function AnalyticsPage() {
     enabled: !!user && selectedAccountId !== null,
   });
 
+  const livePortfolioQuery = useQuery({
+    queryKey: ["live-portfolio-analytics", selectedAccountId],
+    queryFn: () => livePortfolioAnalytics(selectedAccountId as string),
+    enabled: !!user && selectedAccountId !== null,
+  });
+
   if (loading || accountsQuery.isPending || botsQuery.isPending) {
     return (
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-16">
@@ -421,6 +428,58 @@ export default function AnalyticsPage() {
                   trades={report.trades.trades}
                   emptyMessage="No closed round trips yet. Run a paper bot to start building trade history."
                 />
+              </section>
+
+              <section className="mt-10" aria-label="Live portfolio">
+                <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                  Live portfolio
+                </h2>
+                <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                  Equity observed from the live broker on the recurring snapshot tick. Position
+                  value and realized P&L are not yet derivable from spot balances.
+                </p>
+
+                {livePortfolioQuery.isPending ? (
+                  <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">Loading…</p>
+                ) : livePortfolioQuery.isError ? (
+                  <p className="mt-4 text-sm text-red-600 dark:text-red-400">
+                    Live portfolio analytics unavailable — is the live broker configured?
+                  </p>
+                ) : livePortfolioQuery.data ? (
+                  <>
+                    <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-5">
+                      <MetricCard
+                        label="Equity"
+                        value={formatMoney(livePortfolioQuery.data.currentEquity)}
+                      />
+                      <MetricCard
+                        label="Peak equity"
+                        value={formatMoney(livePortfolioQuery.data.peakEquity)}
+                      />
+                      <MetricCard
+                        label="Total return"
+                        value={formatRatio(livePortfolioQuery.data.totalReturn)}
+                        tone={returnTone(livePortfolioQuery.data.totalReturn)}
+                      />
+                      <MetricCard
+                        label="Max drawdown"
+                        value={formatRatio(livePortfolioQuery.data.maxDrawdown)}
+                        tone="bad"
+                      />
+                      <MetricCard
+                        label="Starting cash"
+                        value={formatMoney(livePortfolioQuery.data.startingCash)}
+                      />
+                    </div>
+
+                    <section className="mt-6 rounded-xl border border-zinc-200 p-6 dark:border-zinc-800">
+                      <h3 className="mb-4 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                        Live equity curve
+                      </h3>
+                      <EquityChart points={livePortfolioQuery.data.equityCurve} />
+                    </section>
+                  </>
+                ) : null}
               </section>
 
               <section className="mt-10" aria-label="Live trade analytics">
