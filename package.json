@@ -32,5 +32,9 @@
     "husky": "^9.1.7",
     "prettier": "^3.6.2",
     "typescript": "~5.9.3"
+  },
+  "dependencies": {
+    "@neon/config": "^1.7.2",
+    "@neon/env": "^1.4.3"
   }
 }
