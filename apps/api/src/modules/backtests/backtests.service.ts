@@ -30,11 +30,12 @@ export class BacktestsService {
   ) {}
 
   /**
-   * Run a backtest from a validated DTO and persist the stored report.
+   * Run a backtest from a validated DTO and persist the stored report, owned
+   * by `userId` (from the authenticated request, never the client body).
    * Strategy/config/shape errors are surfaced as 400/404 HTTP errors; the
    * engine's decimal-exact execution then writes the immutable result.
    */
-  async run(dto: RunBacktestDto): Promise<BacktestEntity> {
+  async run(userId: string, dto: RunBacktestDto): Promise<BacktestEntity> {
     const candles = await this.marketsService.getCandles(
       dto.symbol,
       dto.interval,
@@ -74,6 +75,7 @@ export class BacktestsService {
     }
 
     return this.store({
+      userId,
       strategyId: dto.strategyId,
       config: dto.config,
       symbol: dto.symbol,
@@ -92,11 +94,11 @@ export class BacktestsService {
     return this.backtests.save(mapResult(input));
   }
 
-  findById(id: string): Promise<BacktestEntity | null> {
-    return this.backtests.findById(id);
+  findById(userId: string, id: string): Promise<BacktestEntity | null> {
+    return this.backtests.findById(userId, id);
   }
 
-  list(limit = 50): Promise<BacktestEntity[]> {
-    return this.backtests.list(limit);
+  list(userId: string, limit = 50): Promise<BacktestEntity[]> {
+    return this.backtests.list(userId, limit);
   }
 }

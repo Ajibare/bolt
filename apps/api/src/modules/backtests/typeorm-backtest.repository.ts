@@ -18,9 +18,9 @@ export class TypeOrmBacktestRepository extends BacktestRepository {
     return this.repo.save(backtest);
   }
 
-  findById(id: string): Promise<BacktestEntity | null> {
+  findById(userId: string, id: string): Promise<BacktestEntity | null> {
     return this.repo.findOne({
-      where: { id },
+      where: { id, userId },
       relations: {
         trades: true,
         equityPoints: true,
@@ -32,8 +32,9 @@ export class TypeOrmBacktestRepository extends BacktestRepository {
     });
   }
 
-  list(limit: number): Promise<BacktestEntity[]> {
+  list(userId: string, limit: number): Promise<BacktestEntity[]> {
     return this.repo.find({
+      where: { userId },
       order: { createdAt: 'DESC' },
       take: limit,
     });

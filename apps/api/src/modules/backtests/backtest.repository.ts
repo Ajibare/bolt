@@ -8,7 +8,7 @@ import type { BacktestEntity } from './entities/backtest.entity.js';
 export abstract class BacktestRepository {
   abstract save(backtest: BacktestEntity): Promise<BacktestEntity>;
 
-  abstract findById(id: string): Promise<BacktestEntity | null>;
+  abstract findById(userId: string, id: string): Promise<BacktestEntity | null>;
 
-  abstract list(limit: number): Promise<BacktestEntity[]>;
+  abstract list(userId: string, limit: number): Promise<BacktestEntity[]>;
 }

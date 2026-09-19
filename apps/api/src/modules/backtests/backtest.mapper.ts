@@ -7,6 +7,7 @@ import {
 } from './entities/backtest.entity.js';
 
 export interface PersistBacktestInput {
+  userId: string;
   strategyId: string;
   config: Record<string, unknown>;
   symbol: string;
@@ -27,6 +28,7 @@ export interface PersistBacktestInput {
  */
 export function mapResult(input: PersistBacktestInput): BacktestEntity {
   const entity = new BacktestEntity();
+  entity.userId = input.userId;
   entity.strategyId = input.strategyId;
   entity.config = input.config;
   entity.symbol = input.symbol;

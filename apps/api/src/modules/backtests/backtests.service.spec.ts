@@ -63,6 +63,7 @@ function persistInput(): PersistBacktestInput {
     slippageRate: '0',
   });
   return {
+    userId: 'user-1',
     strategyId: SMA_CROSSOVER_ID,
     config: { kind: SMA_CROSSOVER_ID, fastPeriod: 2, slowPeriod: 3 },
     symbol: 'BTCUSDT',
@@ -84,6 +85,7 @@ describe('BacktestsService', () => {
 
     expect(repository.save).toHaveBeenCalledTimes(1);
     expect(stored.id).toBe('bt-1');
+    expect(stored.userId).toBe('user-1');
     expect(stored.strategyId).toBe(SMA_CROSSOVER_ID);
     expect(stored.symbol).toBe('BTCUSDT');
     expect(stored.interval).toBe('15m');
@@ -107,15 +109,15 @@ describe('BacktestsService', () => {
   it('finds a backtest by id through the repository', async () => {
     const { service, repository } = createService();
     repository.findById = vi.fn().mockResolvedValue({ id: 'bt-1' });
-    const found = await service.findById('bt-1');
-    expect(repository.findById).toHaveBeenCalledWith('bt-1');
+    const found = await service.findById('user-1', 'bt-1');
+    expect(repository.findById).toHaveBeenCalledWith('user-1', 'bt-1');
     expect(found?.id).toBe('bt-1');
   });
 
   it('lists backtests newest-first with a default limit', async () => {
     const { service, repository } = createService();
-    await service.list();
-    expect(repository.list).toHaveBeenCalledWith(50);
+    await service.list('user-1');
+    expect(repository.list).toHaveBeenCalledWith('user-1', 50);
   });
 });
 
@@ -140,8 +142,9 @@ describe('BacktestsService.run', () => {
       candles(['100', '90', '80', '100', '90', '100']),
     );
 
-    const stored = await service.run(dto);
+    const stored = await service.run('user-1', dto);
 
+    expect(stored.userId).toBe('user-1');
     expect(marketsService.getCandles).toHaveBeenCalledWith(
       'BTCUSDT',
       '15m',
@@ -158,7 +161,7 @@ describe('BacktestsService.run', () => {
     const { service, marketsService, saveMock } = createService();
     marketsService.getCandles.mockResolvedValue(candles(['100', '90', '80']));
 
-    await service.run({ ...dto, limit: undefined });
+    await service.run('user-1', { ...dto, limit: undefined });
 
     const saved = saveMock.mock.calls[0][0] as BacktestEntity;
     expect(saved.candleLimit).toBe(3);
@@ -167,14 +170,14 @@ describe('BacktestsService.run', () => {
   it('maps an unknown strategy to NotFoundException', async () => {
     const { service } = createService();
     await expect(
-      service.run({ ...dto, strategyId: 'nope' }),
+      service.run('user-1', { ...dto, strategyId: 'nope' }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('maps an invalid strategy config to BadRequestException', async () => {
     const { service } = createService();
     await expect(
-      service.run({
+      service.run('user-1', {
         ...dto,
         config: { kind: SMA_CROSSOVER_ID, fastPeriod: 5, slowPeriod: 2 },
       }),
@@ -184,13 +187,13 @@ describe('BacktestsService.run', () => {
   it('maps engine input errors to BadRequestException', async () => {
     const { service } = createService();
     await expect(
-      service.run({ ...dto, startingBalance: '0' }),
+      service.run('user-1', { ...dto, startingBalance: '0' }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('propagates candles fetch failures unchanged', async () => {
     const { service, marketsService } = createService();
     marketsService.getCandles.mockRejectedValue(new Error('provider down'));
-    await expect(service.run(dto)).rejects.toThrow('provider down');
+    await expect(service.run('user-1', dto)).rejects.toThrow('provider down');
   });
 });

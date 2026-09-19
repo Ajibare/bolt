@@ -15,6 +15,9 @@ export class BacktestEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column({ name: 'user_id', type: 'uuid', nullable: true })
+  userId: string | null;
+
   @Column({ name: 'strategy_id', type: 'varchar', length: 128 })
   strategyId: string;
 

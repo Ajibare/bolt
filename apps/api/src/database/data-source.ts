@@ -14,6 +14,7 @@ import { AddBinanceOcoBracket1700000000010 } from './migrations/1700000000010-Ad
 import { AddBotOrderAttribution1700000000011 } from './migrations/1700000000011-AddBotOrderAttribution.js';
 import { AddLivePortfolioSnapshots1700000000012 } from './migrations/1700000000012-AddLivePortfolioSnapshots.js';
 import { AddNotifications1700000000013 } from './migrations/1700000000013-AddNotifications.js';
+import { AddBacktestOwnership1700000000014 } from './migrations/1700000000014-AddBacktestOwnership.js';
 
 /**
  * DataSource used by CLI-style migration and seed scripts run with tsx.
@@ -42,6 +43,7 @@ export function buildDataSource(
       AddBotOrderAttribution1700000000011,
       AddLivePortfolioSnapshots1700000000012,
       AddNotifications1700000000013,
+      AddBacktestOwnership1700000000014,
     ],
     synchronize: false,
     migrationsRun: false,
